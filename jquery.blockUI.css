@@ -1,0 +1,209 @@
+/*!
+ * jQuery blockUI plugin - optional stylesheet
+ * Version 2.80.0
+ *
+ * Linking this file is all you need to do. blockUI detects it (via the
+ * --blockui-stylesheet custom property below) and stops applying its inline
+ * style defaults, so these rules win without a single !important.
+ *
+ * Styles you pass to a specific call still take effect:
+ *     $.blockUI({ css: { backgroundColor: '#fee' } });
+ *
+ * Dual licensed under the MIT and GPL licenses.
+ */
+
+:root {
+
+	/* The sentinel blockUI looks for. Don't remove it. */
+	--blockui-stylesheet: 1;
+
+	--blockui-scrim: 27, 40, 56;
+	--blockui-scrim-opacity: .55;
+	--blockui-scrim-blur: 2px;
+
+	--blockui-surface: #fff;
+	--blockui-text: #16202c;
+	--blockui-muted: #5b6b7f;
+	--blockui-track: rgba(22, 32, 44, .15);
+	--blockui-indicator: #16202c;
+
+	--blockui-radius: 14px;
+	--blockui-pad: 28px 32px;
+	--blockui-shadow:
+		0 1px 2px rgba(16, 24, 40, .08),
+		0 12px 32px -8px rgba(16, 24, 40, .25);
+
+	--blockui-font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto,
+		"Helvetica Neue", Arial, sans-serif;
+}
+
+/* ---------------------------------------------------------------- overlay */
+
+.blockUI.blockOverlay {
+	background-color: rgb(var(--blockui-scrim));
+	opacity: var(--blockui-scrim-opacity);
+	cursor: wait;
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+	.blockUI.blockOverlay {
+		-webkit-backdrop-filter: blur(var(--blockui-scrim-blur));
+		backdrop-filter: blur(var(--blockui-scrim-blur));
+	}
+}
+
+/* ------------------------------------------------------------ the message */
+
+.blockUI.blockMsg {
+	box-sizing: border-box;
+	padding: var(--blockui-pad);
+	margin: 0;
+	width: auto;
+	text-align: center;
+	color: var(--blockui-text);
+	background: var(--blockui-surface);
+	border: none;
+	border-radius: var(--blockui-radius);
+	box-shadow: var(--blockui-shadow);
+	font: var(--blockui-font);
+	cursor: default;
+}
+
+/* Page blocks centre themselves. Element blocks are positioned by the
+   plugin's center(), which writes inline top/left - no transform here or
+   they'd be shifted twice. */
+.blockUI.blockMsg.blockPage {
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	max-width: min(420px, calc(100vw - 32px));
+}
+
+.blockUI.blockMsg.blockElement {
+	max-width: calc(100% - 24px);
+}
+
+.blockUI.blockMsg :focus-visible {
+	outline: 2px solid var(--blockui-indicator);
+	outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------- spinner */
+
+.blockUI .blockUI-spinner {
+	box-sizing: border-box;
+	width: 28px;
+	height: 28px;
+	margin: 0 auto 14px;
+	border: 3px solid var(--blockui-track);
+	border-top-color: var(--blockui-indicator);
+	border-radius: 50%;
+	animation: blockUI-spin .7s linear infinite;
+}
+
+.blockUI .blockUI-text {
+	margin: 0;
+	font-weight: 500;
+}
+
+@keyframes blockUI-spin {
+	to { transform: rotate(360deg); }
+}
+
+/* ------------------------------------------------------------------ growl */
+
+.blockUI.blockMsg.blockPage:has(> .growlUI) {
+	top: 16px;
+	right: 16px;
+	left: auto;
+	transform: none;
+	max-width: min(360px, calc(100vw - 24px));
+	padding: 14px 18px;
+	text-align: left;
+	color: #f8fafc;
+	background: #16202c;
+	border-radius: 12px;
+	box-shadow: 0 8px 24px -6px rgba(16, 24, 40, .45);
+	font-size: 14px;
+	line-height: 1.45;
+}
+
+.blockUI .growlUI h1 {
+	margin: 0;
+	font-size: 15px;
+	font-weight: 600;
+	line-height: 1.3;
+}
+
+.blockUI .growlUI h2 {
+	margin: 2px 0 0;
+	font-size: 14px;
+	font-weight: 400;
+	line-height: 1.45;
+	opacity: .8;
+}
+
+/* -------------------------------------------------------------- dark mode */
+
+@media (prefers-color-scheme: dark) {
+	:root:not([data-blockui-theme="light"]) {
+		--blockui-scrim: 8, 12, 18;
+		--blockui-scrim-opacity: .68;
+		--blockui-surface: #1b2430;
+		--blockui-text: #e8edf3;
+		--blockui-muted: #94a3b8;
+		--blockui-track: rgba(232, 237, 243, .18);
+		--blockui-indicator: #e8edf3;
+		--blockui-shadow:
+			0 1px 2px rgba(0, 0, 0, .4),
+			0 16px 40px -10px rgba(0, 0, 0, .6);
+	}
+}
+
+:root[data-blockui-theme="dark"] {
+	--blockui-scrim: 8, 12, 18;
+	--blockui-scrim-opacity: .68;
+	--blockui-surface: #1b2430;
+	--blockui-text: #e8edf3;
+	--blockui-muted: #94a3b8;
+	--blockui-track: rgba(232, 237, 243, .18);
+	--blockui-indicator: #e8edf3;
+	--blockui-shadow:
+		0 1px 2px rgba(0, 0, 0, .4),
+		0 16px 40px -10px rgba(0, 0, 0, .6);
+}
+
+/* --------------------------------------------------------- small screens */
+
+@media (max-width: 480px) {
+	:root {
+		--blockui-pad: 24px 20px;
+	}
+
+	.blockUI.blockMsg.blockPage {
+		max-width: calc(100vw - 24px);
+	}
+}
+
+/* ------------------------------------------------------- reduced motion */
+
+@media (prefers-reduced-motion: reduce) {
+	.blockUI .blockUI-spinner {
+
+		/* Still conveys "working", without the fast rotation. */
+		animation-duration: 2.4s;
+	}
+}
+
+/* ------------------------------------------------------- forced colours */
+
+@media (forced-colors: active) {
+	.blockUI.blockMsg {
+		border: 1px solid CanvasText;
+	}
+
+	.blockUI .blockUI-spinner {
+		border-color: CanvasText;
+		border-top-color: Highlight;
+	}
+}

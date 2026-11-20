@@ -1,0 +1,1055 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>blockUI</title>
+<meta name="description" content="Block the UI, don't lock it. A jQuery overlay plugin, now running on jQuery 3 and 4.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<!-- The plugin's optional stylesheet. blockUI detects it and steps aside. -->
+<link rel="stylesheet" href="../jquery.blockUI.css">
+
+<style>
+/* ============================================================= tokens == */
+:root {
+	--paper:   #ffffff;
+	--wash:    #f4f6f8;
+	--ink:     #16202c;
+	--scrim:   #1b2838;
+	--signal:  #e8a317;
+	--link:    #0b6fb8;
+	--rule:    #d5dce4;
+	--muted:   #5b6b7f;
+
+	--sans: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+	--mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+	--gutter: 24px;
+	--measure: 68ch;
+}
+
+:root[data-theme="dark"] {
+	--paper:  #141c26;
+	--wash:   #1b2430;
+	--ink:    #e8edf3;
+	--rule:   #2c3947;
+	--muted:  #94a3b8;
+	--link:   #5bb3f0;
+	--signal: #f0b945;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+	margin: 0;
+	padding: 0;
+	background: var(--paper);
+	color: var(--ink);
+	font-family: var(--sans);
+	font-size: 16px;
+	line-height: 1.6;
+	font-variation-settings: "wdth" 100;
+	-webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--link); }
+
+:focus-visible {
+	outline: 2px solid var(--link);
+	outline-offset: 2px;
+	border-radius: 2px;
+}
+
+/* ============================================================ topbar === */
+.topbar {
+	position: sticky;
+	top: 0;
+	z-index: 50;
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	padding: 10px var(--gutter);
+	background: color-mix(in srgb, var(--paper) 88%, transparent);
+	-webkit-backdrop-filter: blur(8px);
+	backdrop-filter: blur(8px);
+	border-bottom: 1px solid var(--rule);
+}
+
+.topbar__mark {
+	font-weight: 700;
+	font-variation-settings: "wdth" 112;
+	letter-spacing: -.01em;
+	font-size: 17px;
+}
+
+.topbar__mark b { color: var(--signal); font-weight: 700; }
+
+.topbar__spacer { flex: 1; }
+
+.switcher {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 13px;
+	color: var(--muted);
+}
+
+.switcher__set {
+	display: inline-flex;
+	border: 1px solid var(--rule);
+	border-radius: 7px;
+	overflow: hidden;
+}
+
+.switcher__set a {
+	padding: 4px 11px;
+	font: 500 13px/1.7 var(--mono);
+	color: var(--muted);
+	text-decoration: none;
+	background: var(--paper);
+}
+
+.switcher__set a + a { border-left: 1px solid var(--rule); }
+.switcher__set a[aria-current="true"] { background: var(--ink); color: var(--paper); }
+
+.iconbtn {
+	display: grid;
+	place-items: center;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+	background: none;
+	border: 1px solid var(--rule);
+	border-radius: 7px;
+	color: var(--ink);
+	cursor: pointer;
+	font-size: 14px;
+}
+
+/* ============================================================== shell == */
+.shell {
+	max-width: 1180px;
+	margin: 0 auto;
+	padding: 0 var(--gutter);
+}
+
+.prose { max-width: var(--measure); }
+
+.prose p { margin: 0 0 1em; }
+
+h1, h2, h3 { font-variation-settings: "wdth" 118; letter-spacing: -.02em; }
+
+h2 {
+	margin: 0 0 6px;
+	font-size: clamp(26px, 3.4vw, 34px);
+	font-weight: 700;
+	line-height: 1.12;
+}
+
+h3 {
+	margin: 0 0 4px;
+	font-size: 19px;
+	font-weight: 600;
+	line-height: 1.25;
+	font-variation-settings: "wdth" 108;
+}
+
+.lede { color: var(--muted); font-size: 17px; margin: 0 0 28px; max-width: var(--measure); }
+
+/* ================================================================ hero = */
+.hero { padding: clamp(40px, 7vw, 88px) 0 clamp(36px, 5vw, 64px); }
+
+.hero h1 {
+	margin: 0 0 20px;
+	font-size: clamp(42px, 9vw, 104px);
+	font-weight: 800;
+	line-height: .92;
+	font-variation-settings: "wdth" 125;
+	letter-spacing: -.035em;
+}
+
+.hero h1 span { display: block; color: var(--muted); }
+
+.hero__sub {
+	max-width: 46ch;
+	margin: 0 0 32px;
+	font-size: clamp(17px, 2vw, 20px);
+	color: var(--muted);
+}
+
+/* The hero stage is a real blockable element. */
+.stage {
+	position: relative;
+	background: var(--wash);
+	border: 1px solid var(--rule);
+	border-radius: 4px;
+	padding: 28px;
+	box-shadow: 6px 6px 0 color-mix(in srgb, var(--ink) 7%, transparent);
+}
+
+.stage--hero {
+	display: grid;
+	gap: 20px;
+	min-height: 196px;
+	align-content: center;
+	justify-items: start;
+}
+
+.stage__note {
+	margin: 0;
+	font: 500 13px/1.6 var(--mono);
+	color: var(--muted);
+}
+
+/* ============================================================= buttons = */
+.btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	padding: 9px 17px;
+	font: 600 15px/1.3 var(--sans);
+	font-variation-settings: "wdth" 104;
+	color: var(--paper);
+	background: var(--link);
+	border: 1px solid var(--link);
+	border-radius: 8px;
+	cursor: pointer;
+	text-decoration: none;
+	transition: background .12s ease, border-color .12s ease;
+}
+
+.btn:hover { background: color-mix(in srgb, var(--link) 86%, black); }
+
+.btn--ghost {
+	color: var(--ink);
+	background: var(--paper);
+	border-color: var(--rule);
+}
+
+.btn--ghost:hover { background: var(--wash); }
+
+.btn--wait { color: var(--ink); background: var(--signal); border-color: var(--signal); }
+.btn--wait:hover { background: color-mix(in srgb, var(--signal) 88%, black); }
+
+.btnrow { display: flex; flex-wrap: wrap; gap: 10px; }
+
+/* ============================================================ sections = */
+.section { padding: clamp(38px, 5vw, 64px) 0; border-top: 1px solid var(--rule); }
+
+.section__head { margin-bottom: 28px; }
+
+/* ============================================================== layers = */
+.layers {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	gap: 40px;
+	align-items: center;
+}
+
+.layers svg { width: 100%; height: auto; }
+
+.layerlist { margin: 0; padding: 0; list-style: none; }
+
+.layerlist li {
+	display: grid;
+	grid-template-columns: 76px 1fr;
+	gap: 16px;
+	padding: 12px 0;
+	border-top: 1px solid var(--rule);
+	align-items: baseline;
+}
+
+.layerlist li:last-child { border-bottom: 1px solid var(--rule); }
+
+.layerlist code {
+	font: 500 12px/1.6 var(--mono);
+	color: var(--muted);
+}
+
+.layerlist b { font-weight: 600; }
+.layerlist p { margin: 2px 0 0; color: var(--muted); font-size: 15px; }
+
+/* =============================================================== demos = */
+.demo { display: grid; gap: 18px; margin-bottom: 44px; }
+
+.demo__head { max-width: var(--measure); }
+.demo__head p { margin: 4px 0 0; color: var(--muted); }
+
+.demo__body {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	gap: 18px;
+	align-items: start;
+}
+
+.stage--demo {
+	display: grid;
+	gap: 14px;
+	align-content: start;
+	min-height: 168px;
+}
+
+.stage__filler { margin: 0; color: var(--muted); font-size: 15px; }
+
+/* code ---------------------------------------------------------------- */
+.code {
+	position: relative;
+	margin: 0;
+	padding: 16px 18px;
+	overflow-x: auto;
+	background: var(--scrim);
+	border-radius: 4px;
+	color: #d7e2ee;
+	font: 400 13px/1.65 var(--mono);
+	tab-size: 2;
+}
+
+:root[data-theme="dark"] .code { background: #0d141c; }
+
+.code .k { color: #8fc7f5; }
+.code .s { color: #f0b945; }
+.code .c { color: #7b8ea3; font-style: italic; }
+.code .f { color: #c3b0ef; }
+
+.copy {
+	position: absolute;
+	top: 8px;
+	right: 8px;
+	padding: 3px 9px;
+	font: 500 11px/1.7 var(--mono);
+	color: #9fb2c6;
+	background: rgba(255, 255, 255, .07);
+	border: 0;
+	border-radius: 5px;
+	cursor: pointer;
+}
+
+.copy:hover { color: #fff; background: rgba(255, 255, 255, .15); }
+
+/* ============================================================== checks = */
+.checks { width: 100%; border-collapse: collapse; font-size: 15px; }
+
+.checks th, .checks td {
+	padding: 9px 12px 9px 0;
+	text-align: left;
+	border-bottom: 1px solid var(--rule);
+	vertical-align: top;
+}
+
+.checks th { font-weight: 600; color: var(--muted); font-size: 13px; }
+.checks code { font: 400 13px/1.6 var(--mono); }
+
+.verdict { font: 500 13px/1.6 var(--mono); white-space: nowrap; }
+.verdict--pass { color: #1a7f52; }
+.verdict--fail { color: #c0392b; }
+
+:root[data-theme="dark"] .verdict--pass { color: #4ec98c; }
+:root[data-theme="dark"] .verdict--fail { color: #ff8577; }
+
+.runline { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; flex-wrap: wrap; }
+
+.tally { font: 500 14px/1.6 var(--mono); color: var(--muted); }
+
+/* ============================================================= options = */
+.opts { width: 100%; border-collapse: collapse; font-size: 15px; }
+
+.opts th, .opts td {
+	padding: 10px 14px 10px 0;
+	text-align: left;
+	border-bottom: 1px solid var(--rule);
+	vertical-align: top;
+}
+
+.opts th { font-weight: 600; font-size: 13px; color: var(--muted); }
+.opts code { font: 400 13px/1.6 var(--mono); color: var(--ink); }
+.opts td:last-child { color: var(--muted); }
+
+.tag {
+	display: inline-block;
+	padding: 1px 7px;
+	font: 500 11px/1.7 var(--mono);
+	color: var(--ink);
+	background: var(--signal);
+	border-radius: 4px;
+}
+
+/* ============================================================== footer = */
+.footer {
+	padding: 40px 0 64px;
+	border-top: 1px solid var(--rule);
+	color: var(--muted);
+	font-size: 14px;
+}
+
+.footer p { margin: 0 0 6px; max-width: var(--measure); }
+
+/* ============================================================ dialog === */
+.dialog { text-align: left; min-width: min(380px, 78vw); }
+.dialog h3 { margin: 0 0 6px; }
+.dialog p { margin: 0 0 16px; color: var(--muted); font-size: 15px; }
+.dialog label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
+
+.dialog input {
+	width: 100%;
+	padding: 9px 11px;
+	margin-bottom: 16px;
+	font: 400 15px/1.4 var(--sans);
+	color: var(--ink);
+	background: var(--paper);
+	border: 1px solid var(--rule);
+	border-radius: 7px;
+}
+
+.dialog__actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+/* =========================================================== responsive */
+@media (max-width: 860px) {
+	.layers, .demo__body { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+	.hero h1 { font-variation-settings: "wdth" 108; }
+}
+
+@media (max-width: 520px) {
+	:root { --gutter: 16px; }
+	.topbar { flex-wrap: wrap; gap: 10px; }
+	.layerlist li { grid-template-columns: 1fr; gap: 2px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	* { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+	<span class="topbar__mark">block<b>UI</b></span>
+	<div class="topbar__spacer"></div>
+	<div class="switcher">
+		<span>running on jQuery</span>
+		<span class="switcher__set" id="jqSwitch"></span>
+	</div>
+	<button class="iconbtn" id="themeToggle" type="button" aria-label="Switch to dark theme">&#9681;</button>
+</header>
+
+<main class="shell">
+
+<!-- ====================================================== hero ======= -->
+<section class="hero">
+	<h1>Blocking,<span>not locking.</span></h1>
+	<p class="hero__sub">
+		Put an overlay over the page, or over one element, while something is in
+		flight. The browser stays responsive the whole time &mdash; nothing is
+		frozen, the user just can&rsquo;t reach what&rsquo;s underneath.
+	</p>
+
+	<div class="stage stage--hero" id="heroStage">
+		<p class="stage__note" id="heroNote">This panel blocks itself in a moment.</p>
+		<div class="btnrow">
+			<button class="btn" type="button" data-demo="hero-block">Block this panel</button>
+			<button class="btn btn--ghost" type="button" data-demo="hero-page">Block the whole page</button>
+		</div>
+	</div>
+</section>
+
+<!-- ====================================================== layers ===== -->
+<section class="section" id="layers">
+	<div class="section__head prose">
+		<h2>Three layers, every time</h2>
+		<p class="lede">
+			Every block builds the same stack. Knowing which layer is which is most
+			of what you need to style it.
+		</p>
+	</div>
+
+	<div class="layers">
+		<svg viewBox="0 0 420 300" role="img" aria-labelledby="layersTitle layersDesc">
+			<title id="layersTitle">The three stacked layers blockUI creates</title>
+			<desc id="layersDesc">An optional iframe layer at the bottom, a translucent
+			overlay above it, and the message panel on top.</desc>
+
+			<g fill="none" stroke-width="1.5">
+				<!-- layer 1: iframe -->
+				<path d="M40 210 L240 130 L380 190 L180 270 Z"
+					fill="var(--wash)" stroke="var(--rule)"/>
+				<text x="392" y="214" fill="var(--muted)" font-family="var(--mono)"
+					font-size="11" text-anchor="end">z 1000</text>
+
+				<!-- layer 2: overlay -->
+				<path d="M40 150 L240 70 L380 130 L180 210 Z"
+					fill="var(--scrim)" fill-opacity=".5" stroke="var(--scrim)"/>
+				<text x="392" y="154" fill="var(--muted)" font-family="var(--mono)"
+					font-size="11" text-anchor="end">z 1001</text>
+
+				<!-- layer 3: message -->
+				<path d="M120 92 L228 50 L300 80 L192 122 Z"
+					fill="var(--paper)" stroke="var(--signal)" stroke-width="2"/>
+				<text x="392" y="94" fill="var(--muted)" font-family="var(--mono)"
+					font-size="11" text-anchor="end">z 1011</text>
+			</g>
+		</svg>
+
+		<ul class="layerlist">
+			<li>
+				<code>.blockUI</code>
+				<div>
+					<b>The iframe</b>
+					<p>Optional, off by default. Turn on <code>forceIframe</code> when a
+					plugin or embed paints straight over the overlay.</p>
+				</div>
+			</li>
+			<li>
+				<code>.blockOverlay</code>
+				<div>
+					<b>The overlay</b>
+					<p>The dimmed sheet that swallows clicks. Fixed for a page block,
+					absolute for an element block.</p>
+				</div>
+			</li>
+			<li>
+				<code>.blockMsg</code>
+				<div>
+					<b>The message</b>
+					<p>Your content. Anything you can put in a string, a DOM node or a
+					jQuery object goes here.</p>
+				</div>
+			</li>
+		</ul>
+	</div>
+</section>
+
+<!-- ====================================================== demos ====== -->
+<section class="section" id="demos">
+	<div class="section__head prose">
+		<h2>Try it</h2>
+		<p class="lede">
+			Every panel below is live. Each one runs exactly the code shown beside it.
+		</p>
+	</div>
+
+	<!-- page block -->
+	<article class="demo">
+		<div class="demo__head">
+			<h3>Block the page</h3>
+			<p>The default message is a spinner and a line of text. It clears itself
+			after two seconds here.</p>
+		</div>
+		<div class="demo__body">
+			<div class="stage stage--demo">
+				<div class="btnrow">
+					<button class="btn btn--wait" type="button" data-demo="page">Block the page</button>
+					<button class="btn btn--ghost" type="button" data-demo="page-msg">With your own message</button>
+				</div>
+				<p class="stage__filler">Try scrolling or clicking while it&rsquo;s up &mdash;
+				the page is covered, but the browser never stops responding.</p>
+			</div>
+<pre class="code"><code><span class="c">// the whole page</span>
+$.<span class="f">blockUI</span>();
+
+<span class="c">// ...and your own content</span>
+$.<span class="f">blockUI</span>({ message: <span class="s">'&lt;h3&gt;Uploading&lt;/h3&gt;'</span> });
+
+$.<span class="f">unblockUI</span>();</code></pre>
+		</div>
+	</article>
+
+	<!-- element block -->
+	<article class="demo">
+		<div class="demo__head">
+			<h3>Block one element</h3>
+			<p>Same call, scoped to a selection. blockUI gives the element
+			<code>position: relative</code> if it needs it, and puts it back afterwards.</p>
+		</div>
+		<div class="demo__body">
+			<div class="stage stage--demo" id="elStage">
+				<div class="btnrow">
+					<button class="btn btn--wait" type="button" data-demo="element">Block this panel</button>
+					<button class="btn btn--ghost" type="button" data-demo="element-plain">Overlay only</button>
+				</div>
+				<p class="stage__filler">Only this panel goes dim. The rest of the page
+				stays live &mdash; scroll, click, switch the theme.</p>
+			</div>
+<pre class="code"><code>$(<span class="s">'#panel'</span>).<span class="f">block</span>({ message: <span class="s">'Saving&hellip;'</span> });
+
+<span class="c">// overlay with no message at all</span>
+$(<span class="s">'#panel'</span>).<span class="f">block</span>({ message: <span class="k">null</span> });
+
+$(<span class="s">'#panel'</span>).<span class="f">unblock</span>();</code></pre>
+		</div>
+	</article>
+
+	<!-- dialog -->
+	<article class="demo">
+		<div class="demo__head">
+			<h3>A modal dialog</h3>
+			<p>Pass something with a form control in it and blockUI marks the panel
+			<code>role="dialog"</code>, traps Tab inside it, and hands focus back to
+			the button you came from.</p>
+		</div>
+		<div class="demo__body">
+			<div class="stage stage--demo">
+				<div class="btnrow">
+					<button class="btn" type="button" data-demo="dialog">Open the dialog</button>
+				</div>
+				<p class="stage__filler">Tab round it, then close with Escape. Focus
+				returns to the button that opened it.</p>
+			</div>
+<pre class="code"><code>$.<span class="f">blockUI</span>({
+	message: $(<span class="s">'#myForm'</span>),
+	escapeToUnblock: <span class="k">true</span>,
+	onOverlayClick: $.unblockUI
+});</code></pre>
+		</div>
+	</article>
+
+	<!-- growl -->
+	<article class="demo">
+		<div class="demo__head">
+			<h3>Growl notices</h3>
+			<p>A small toast in the corner, with no overlay. Hover it and it waits
+			for you.</p>
+		</div>
+		<div class="demo__body">
+			<div class="stage stage--demo">
+				<div class="btnrow">
+					<button class="btn btn--ghost" type="button" data-demo="growl">Show a notice</button>
+				</div>
+				<p class="stage__filler">The page stays entirely usable &mdash; growl
+				notices never block anything.</p>
+			</div>
+<pre class="code"><code>$.<span class="f">growlUI</span>(<span class="s">'Deployed'</span>, <span class="s">'build 4821 is live'</span>);</code></pre>
+		</div>
+	</article>
+
+	<!-- styling -->
+	<article class="demo">
+		<div class="demo__head">
+			<h3>Restyle it</h3>
+			<p>Pass <code>css</code> and <code>overlayCSS</code> for one call, or set
+			them on <code>$.blockUI.defaults</code> for all of them. The old pre-2.80
+			look is still in the box.</p>
+		</div>
+		<div class="demo__body">
+			<div class="stage stage--demo">
+				<div class="btnrow">
+					<button class="btn btn--ghost" type="button" data-demo="custom">Tinted</button>
+					<button class="btn btn--ghost" type="button" data-demo="classic">The 2007 look</button>
+				</div>
+				<p class="stage__filler">Styles passed to a call always win, stylesheet
+				or not.</p>
+			</div>
+<pre class="code"><code>$.<span class="f">blockUI</span>({
+	css: { backgroundColor: <span class="s">'#16202c'</span>, color: <span class="s">'#fff'</span> },
+	overlayCSS: { backgroundColor: <span class="s">'#e8a317'</span> }
+});
+
+<span class="c">// bring back the original styling wholesale</span>
+$.blockUI.defaults.css = $.blockUI.classicCSS;</code></pre>
+		</div>
+	</article>
+</section>
+
+<!-- ====================================================== checks ==== -->
+<section class="section" id="compat">
+	<div class="section__head prose">
+		<h2>Does it actually run on jQuery 4?</h2>
+		<p class="lede">
+			These checks run in your browser, against whichever jQuery is loaded
+			right now. Switch versions in the bar at the top and run them again.
+		</p>
+	</div>
+
+	<div class="runline">
+		<button class="btn" type="button" id="runChecks">Run the checks</button>
+		<span class="tally" id="tally"></span>
+	</div>
+
+	<table class="checks">
+		<thead>
+			<tr><th scope="col">Check</th><th scope="col">What it proves</th><th scope="col">Result</th></tr>
+		</thead>
+		<tbody id="checkRows"></tbody>
+	</table>
+</section>
+
+<!-- ====================================================== options ==== -->
+<section class="section" id="options">
+	<div class="section__head prose">
+		<h2>What&rsquo;s new in 2.80</h2>
+		<p class="lede">
+			Options added or changed in the jQuery 4 port. Everything else from 2.70
+			works as it did.
+		</p>
+	</div>
+
+	<table class="opts">
+		<thead>
+			<tr><th scope="col">Option</th><th scope="col">Default</th><th scope="col">What it does</th></tr>
+		</thead>
+		<tbody>
+			<tr>
+				<td><code>escapeToUnblock</code> <span class="tag">new</span></td>
+				<td><code>false</code></td>
+				<td>Close the block when the user presses Escape. Leave it off for
+				progress blocks the user must not dismiss.</td>
+			</tr>
+			<tr>
+				<td><code>restoreFocus</code> <span class="tag">new</span></td>
+				<td><code>true</code></td>
+				<td>Return focus to whatever had it before the page was blocked.</td>
+			</tr>
+			<tr>
+				<td><code>ariaRole</code> <span class="tag">new</span></td>
+				<td><code>'auto'</code></td>
+				<td><code>'dialog'</code> when the message holds something focusable,
+				otherwise a polite <code>'status'</code> region. Pass your own, or
+				<code>null</code> for none.</td>
+			</tr>
+			<tr>
+				<td><code>respectReducedMotion</code> <span class="tag">new</span></td>
+				<td><code>true</code></td>
+				<td>Skip the fades when the OS asks for reduced motion.</td>
+			</tr>
+			<tr>
+				<td><code>autoDetectCSS</code> <span class="tag">new</span></td>
+				<td><code>true</code></td>
+				<td>Drop the built-in inline styling when
+				<code>jquery.blockUI.css</code> is on the page, so the stylesheet wins
+				without <code>!important</code>.</td>
+			</tr>
+			<tr>
+				<td><code>injectCSS</code> <span class="tag">new</span></td>
+				<td><code>true</code></td>
+				<td>Add the spinner keyframes, which an inline style can&rsquo;t
+				express. Turn it off under a strict <code>style-src</code> policy.</td>
+			</tr>
+			<tr>
+				<td><code>message</code> <span class="tag">changed</span></td>
+				<td>spinner + text</td>
+				<td>Was <code>&lt;h1&gt;Please wait...&lt;/h1&gt;</code>. The old one is
+				<code>$.blockUI.classicMessage</code>.</td>
+			</tr>
+			<tr>
+				<td><code>css</code>, <code>overlayCSS</code> <span class="tag">changed</span></td>
+				<td>see source</td>
+				<td>Restyled. <code>$.blockUI.classicCSS</code> and
+				<code>classicOverlayCSS</code> restore the originals.</td>
+			</tr>
+			<tr>
+				<td><code>forceIframe</code> <span class="tag">changed</span></td>
+				<td><code>false</code></td>
+				<td>The iframe layer used to appear automatically in IE. Now it only
+				appears when you ask for it.</td>
+			</tr>
+			<tr>
+				<td><code>allowBodyStretch</code>, <code>quirksmodeOffsetHack</code></td>
+				<td>&mdash;</td>
+				<td>No-ops now. They only ever applied to IE 6/7 quirks mode; kept so
+				existing config objects don&rsquo;t break.</td>
+			</tr>
+		</tbody>
+	</table>
+</section>
+
+<footer class="footer shell">
+	<p>blockUI 2.80.0 &mdash; by M. Alsup, dual licensed under the MIT and GPL
+	licenses. Requires jQuery 3.0 or later.</p>
+	<p>This page loads jQuery from <code>demo/vendor/</code>, so it works offline.</p>
+</footer>
+
+</main>
+
+<!-- The dialog content, parked in the page until blockUI borrows it. -->
+<div id="dialogForm" class="dialog" style="display:none">
+	<h3>Discard this draft?</h3>
+	<p>It hasn&rsquo;t been saved anywhere. Give it a name to keep it instead.</p>
+	<label for="draftName">Name</label>
+	<input type="text" id="draftName" placeholder="Untitled draft">
+	<div class="dialog__actions">
+		<button class="btn btn--ghost" type="button" id="dialogCancel">Keep editing</button>
+		<button class="btn" type="button" id="dialogOk">Discard</button>
+	</div>
+</div>
+
+<script>
+// Pick the jQuery build before anything else loads.
+(function() {
+	var want = new URLSearchParams(location.search).get('jq') === '3' ? '3.8.0' : '4.1.0';
+	document.write('<scr' + 'ipt src="vendor/jquery-' + want + '.js"><\/scr' + 'ipt>');
+})();
+</script>
+<script src="../jquery.blockUI.js"></script>
+<script>
+(function($) {
+	"use strict";
+
+	var loaded = $.fn.jquery;
+	var major = parseInt(loaded, 10);
+
+	/* ---------------------------------------------------- version switch */
+	var $switch = $('#jqSwitch');
+	$.each([ '3', '4' ], function(i, v) {
+		$('<a></a>')
+			.attr('href', '?jq=' + v + location.hash)
+			.attr('aria-current', String(major === +v))
+			.text(v + '.x')
+			.appendTo($switch);
+	});
+	$switch.attr('title', 'loaded: ' + loaded);
+
+	/* ------------------------------------------------------ theme toggle */
+	var $root = $('html'), $toggle = $('#themeToggle');
+	$toggle.on('click', function() {
+		var next = $root.attr('data-theme') === 'dark' ? 'light' : 'dark';
+		$root.attr('data-theme', next).attr('data-blockui-theme', next);
+		$toggle.attr('aria-label', 'Switch to ' + (next === 'dark' ? 'light' : 'dark') + ' theme');
+	});
+	$root.attr('data-blockui-theme', 'light');
+
+	/* -------------------------------------------------------- copy code */
+	$('pre.code').each(function() {
+		var $pre = $(this);
+		$('<button class="copy" type="button">copy</button>')
+			.on('click', function() {
+				var btn = this;
+				navigator.clipboard.writeText($pre.find('code').text()).then(function() {
+					btn.textContent = 'copied';
+					setTimeout(function() { btn.textContent = 'copy'; }, 1400);
+				});
+			})
+			.appendTo($pre);
+	});
+
+	/* ------------------------------------------------------------ demos */
+	function release(ms) { setTimeout($.unblockUI, ms || 2000); }
+
+	var demos = {
+		'hero-block': function() {
+			$('#heroStage').block({ message: '<p class="blockUI-text">Blocked</p>' });
+			setTimeout(function() { $('#heroStage').unblock(); }, 1800);
+		},
+		'hero-page': function() { $.blockUI(); release(); },
+		'page':      function() { $.blockUI(); release(); },
+		'page-msg':  function() {
+			$.blockUI({ message: '<h3 style="margin:0">Uploading 24 files</h3>' });
+			release(2200);
+		},
+		'element':   function() {
+			$('#elStage').block({ message: '<p class="blockUI-text">Saving&hellip;</p>' });
+			setTimeout(function() { $('#elStage').unblock(); }, 2000);
+		},
+		'element-plain': function() {
+			$('#elStage').block({ message: null });
+			setTimeout(function() { $('#elStage').unblock(); }, 1600);
+		},
+		'growl':     function() { $.growlUI('Deployed', 'build 4821 is live'); },
+		'custom':    function() {
+			$.blockUI({
+				message: '<p class="blockUI-text">Tinted to taste</p>',
+				css: { backgroundColor: '#16202c', color: '#fff' },
+				overlayCSS: { backgroundColor: '#e8a317', opacity: .45 }
+			});
+			release();
+		},
+		'classic':   function() {
+			$.blockUI({
+				message: $.blockUI.classicMessage,
+				css: $.blockUI.classicCSS,
+				overlayCSS: $.blockUI.classicOverlayCSS
+			});
+			release(2400);
+		},
+		'dialog':    function() {
+			$.blockUI({
+				message: $('#dialogForm'),
+				escapeToUnblock: true,
+				css: { padding: '26px 28px' },
+				onOverlayClick: $.unblockUI
+			});
+		}
+	};
+
+	$(document).on('click', '[data-demo]', function() {
+		var fn = demos[$(this).data('demo')];
+		if (fn) fn();
+	});
+
+	$('#dialogCancel, #dialogOk').on('click', function() { $.unblockUI(); });
+
+	// One orchestrated moment: the hero shows what it does, once.
+	setTimeout(function() {
+		var $hero = $('#heroStage');
+		if (!$hero.length) return;
+		$hero.block({ message: '<p class="blockUI-text">Like this.</p>' });
+		setTimeout(function() {
+			$hero.unblock();
+			$('#heroNote').text('That was a real block. The buttons below do it again.');
+		}, 1500);
+	}, 900);
+
+	/* ----------------------------------------------------------- checks */
+	var checks = [
+		{
+			name: 'plugin loads',
+			why: 'In 2.70 the plugin called $.isFunction at load time. jQuery 4 removed it, so the file threw before it defined anything.',
+			run: function() {
+				return typeof $.blockUI === 'function' &&
+					typeof $.fn.block === 'function' &&
+					typeof $.fn.unblock === 'function' &&
+					typeof $.growlUI === 'function';
+			}
+		},
+		{
+			name: 'no $.isFunction',
+			why: 'Removed in jQuery 4. The source must not reference it at all.',
+			run: function() { return typeof $.isFunction === 'undefined' || major < 4; }
+		},
+		{
+			name: 'page block and unblock',
+			why: 'The full install() and remove() path, including the document-level event handler.',
+			run: function() {
+				$.blockUI({ fadeIn: 0, fadeOut: 0, message: 'probe' });
+				var up = $('body > .blockMsg').length === 1 &&
+					$('body > .blockOverlay').length === 1;
+				$.unblockUI({ fadeOut: 0 });
+				return up && $('body > .blockUI').length === 0;
+			}
+		},
+		{
+			name: 'element block and unblock',
+			why: 'Scoped blocking, plus restoring the element position afterwards.',
+			run: function() {
+				var $t = $('<div style="height:40px"></div>').appendTo('body');
+				$t.block({ fadeIn: 0, fadeOut: 0, message: 'probe' });
+				var up = $t.find('> .blockMsg').length === 1;
+				$t.unblock({ fadeOut: 0 });
+				var down = $t.find('> .blockUI').length === 0 &&
+					$t[0].style.position === 'static';
+				$t.remove();
+				return up && down;
+			}
+		},
+		{
+			name: 'events bind with .on()',
+			why: '2.70 used .bind()/.unbind(), deprecated since jQuery 3 and due to go in 5.',
+			run: function() {
+				if (!$._data) return true; // can't introspect; nothing to assert
+				var before = !!($._data(document, 'events') || {}).mousedown;
+				$.blockUI({ fadeIn: 0, fadeOut: 0 });
+				var during = !!($._data(document, 'events') || {}).mousedown;
+				$.unblockUI({ fadeOut: 0 });
+				var after = !!($._data(document, 'events') || {}).mousedown;
+				return !before && during && !after;
+			}
+		},
+		{
+			name: 'focusable selector resolves',
+			why: 'The tab trap relies on :input:enabled:visible, a jQuery-specific selector.',
+			run: function() {
+				return $('<div><input><button></button></div>')
+					.find($.blockUI.defaults.focusableElements).length >= 0;
+			}
+		},
+		{
+			name: 'css() keeps units',
+			why: 'jQuery 4 stopped adding px to most unitless numbers. Every default must carry its own unit.',
+			run: function() {
+				// these are unitless by definition, a bare number is correct
+				var unitless = /^(opacity|zIndex|fontWeight|lineHeight|zoom|order|flexGrow|flexShrink|columnCount)$/;
+				var bad = [];
+				$.each([
+					$.blockUI.defaults.css,
+					$.blockUI.defaults.growlCSS,
+					$.blockUI.defaults.overlayCSS,
+					$.blockUI.defaults.themedCSS
+				], function(i, set) {
+					$.each(set, function(prop, val) {
+						if (typeof val === 'number' && val !== 0 && !unitless.test(prop)) {
+							bad.push(prop);
+						}
+					});
+				});
+				return bad.length === 0;
+			}
+		},
+		{
+			name: 'ARIA role is applied',
+			why: 'A message with a form control should announce as a dialog, not a status.',
+			run: function() {
+				$.blockUI({
+					fadeIn: 0, fadeOut: 0,
+					message: '<div><input id="probeInput"></div>'
+				});
+				var role = $('body > .blockMsg').attr('role');
+				$.unblockUI({ fadeOut: 0 });
+				return role === 'dialog';
+			}
+		},
+		{
+			name: 'stylesheet detected',
+			why: 'jquery.blockUI.css is linked on this page, so the plugin should stand down and let it style things.',
+			run: function() {
+				$.blockUI({ fadeIn: 0, fadeOut: 0, message: 'probe' });
+				var inline = $('body > .blockMsg')[0].style.backgroundColor;
+				$.unblockUI({ fadeOut: 0 });
+				return inline === '';
+			}
+		},
+		{
+			name: 'growl renders',
+			why: 'growlUI used .mouseover()/.mouseout(), the shorthand event methods.',
+			run: function() {
+				$.growlUI('probe', 'probe', 1);
+				var ok = $('body > .blockMsg .growlUI').length === 1;
+				$.unblockUI({ fadeOut: 0 });
+				return ok;
+			}
+		}
+	];
+
+	var $rows = $('#checkRows');
+
+	function paint(results) {
+		$rows.empty();
+		var pass = 0;
+		$.each(checks, function(i, c) {
+			var r = results ? results[i] : null;
+			var verdict = r === null ? '&mdash;' : (r.ok ? 'pass' : 'fail');
+			if (r && r.ok) pass++;
+			$('<tr></tr>')
+				.append($('<td></td>').append($('<code></code>').text(c.name)))
+				.append($('<td></td>').text(c.why))
+				.append($('<td></td>')
+					.addClass('verdict')
+					.addClass(r === null ? '' : (r.ok ? 'verdict--pass' : 'verdict--fail'))
+					.html(r && r.error ? 'fail &mdash; ' + r.error : verdict))
+				.appendTo($rows);
+		});
+		if (results) {
+			$('#tally').text(pass + ' of ' + checks.length + ' passing on jQuery ' + loaded);
+		}
+	}
+
+	$('#runChecks').on('click', function() {
+		var results = $.map(checks, function(c) {
+			try {
+				return { ok: !!c.run() };
+			} catch (e) {
+				return { ok: false, error: String(e.message || e) };
+			}
+		});
+		paint(results);
+	});
+
+	paint(null);
+	$('#tally').text('not run yet');
+
+})(jQuery);
+</script>
+</body>
+</html>

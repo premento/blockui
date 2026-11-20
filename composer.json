@@ -7,7 +7,10 @@
         "dialog",
         "modal"
     ],
-    "license": ["MIT", "GPL"],
+    "license": [
+        "MIT",
+        "GPL"
+    ],
     "type": "component",
     "homepage": "http://jquery.malsup.com/block/",
     "authors": [
@@ -18,7 +21,7 @@
     ],
     "require": {
         "robloach/component-installer": "*",
-        "components/jquery": ">=1.7"
+        "components/jquery": ">=3.0"
     },
     "extra": {
         "component": {
@@ -29,7 +32,10 @@
                 "deps": [
                     "jquery"
                 ]
-            }
+            },
+            "styles": [
+                "jquery.blockUI.css"
+            ]
         }
     }
 }

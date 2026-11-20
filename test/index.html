@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>blockUI test suite</title>
+<style>
+	body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; max-width: 900px; }
+	h1 { font-size: 20px; margin: 0 0 4px; }
+	.meta { color: #666; margin: 0 0 18px; }
+	table { border-collapse: collapse; width: 100%; }
+	td, th { padding: 5px 10px 5px 0; border-bottom: 1px solid #e3e8ee; text-align: left;
+		vertical-align: top; }
+	th { font-size: 12px; color: #666; }
+	.pass { color: #1a7f52; font-weight: 600; }
+	.fail { color: #c0392b; font-weight: 600; }
+	#summary { font-size: 16px; font-weight: 600; margin: 16px 0; }
+	#target { height: 90px; background: #eef2f6; padding: 10px; }
+	nav a { margin-right: 12px; }
+</style>
+</head>
+<body>
+
+<h1>blockUI test suite</h1>
+<p class="meta">
+	<nav>
+		<a href="?jq=3">jQuery 3.8</a>
+		<a href="?jq=4">jQuery 4.1</a>
+		<a href="?jq=4&amp;css=1">jQuery 4.1 + stylesheet</a>
+		<a href="?jq=3&amp;css=1">jQuery 3.8 + stylesheet</a>
+	</nav>
+</p>
+
+<div id="summary">running&hellip;</div>
+
+<table>
+	<thead><tr><th>#</th><th>Test</th><th>Result</th></tr></thead>
+	<tbody id="results"></tbody>
+</table>
+
+<div id="target">An element to block.</div>
+<div id="borrowed" style="display:none"><p>Borrowed</p><input id="borrowedInput"></div>
+<button id="opener" type="button">opener</button>
+
+<script>
+// Animations are driven by requestAnimationFrame, which browsers pause in a
+// hidden or background tab. Shim it onto timers so the fade paths are testable
+// headlessly. Must run before jQuery loads.
+(function() {
+	var q = [];
+	window.requestAnimationFrame = function(cb) {
+		return setTimeout(function() { cb(performance.now()); }, 16);
+	};
+	window.cancelAnimationFrame = function(id) { clearTimeout(id); };
+
+	var p = new URLSearchParams(location.search);
+	var ver = p.get('jq') === '3' ? '3.8.0' : '4.1.0';
+	if (p.get('css') === '1') {
+		document.write('<link rel="stylesheet" href="../jquery.blockUI.css">');
+	}
+	document.write('<scr' + 'ipt src="../demo/vendor/jquery-' + ver + '.js"><\/scr' + 'ipt>');
+})();
+</script>
+<script src="../jquery.blockUI.js"></script>
+<script>
+(function($) {
+	"use strict";
+
+	var withStylesheet = new URLSearchParams(location.search).get('css') === '1';
+	var results = [];
+
+	function sleep(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
+
+	// Wait until blockUI has fully torn down, or give up.
+	function settled(sel, want, limit) {
+		limit = limit || 3000;
+		var start = Date.now();
+		return new Promise(function(resolve) {
+			(function poll() {
+				if ($(sel).length === want || Date.now() - start > limit) return resolve();
+				setTimeout(poll, 25);
+			})();
+		});
+	}
+
+	var tests = [
+
+		[ 'plugin is defined', async function() {
+			return typeof $.blockUI === 'function' && typeof $.unblockUI === 'function' &&
+				typeof $.fn.block === 'function' && typeof $.fn.unblock === 'function' &&
+				typeof $.growlUI === 'function' && $.blockUI.version === 2.80;
+		} ],
+
+		[ 'no removed jQuery APIs referenced', async function() {
+			var src = await fetch('../jquery.blockUI.js').then(function(r) { return r.text(); });
+			var banned = [ '$.isFunction', '$.trim(', '$.isArray', '$.type(', '$.now(',
+				'$.parseJSON', '$.isWindow', '$.camelCase', '$.cssProps',
+				'support.boxModel', 'setExpression' ];
+			var hits = banned.filter(function(b) { return src.indexOf(b) > -1; });
+			// .bind(/.unbind( as *jQuery* methods (Function.prototype.bind is fine)
+			if (/\$\([^)]*\)\.(bind|unbind)\(/.test(src)) hits.push('jQuery .bind/.unbind');
+			if (/\.(mouseover|mouseout|click|focus)\(\s*function/.test(src)) {
+				hits.push('shorthand event method');
+			}
+			return hits.length === 0 || hits.join(', ');
+		} ],
+
+		[ 'page block: instant path', async function() {
+			$.blockUI({ fadeIn: 0, fadeOut: 0, message: 'x' });
+			var up = $('body > .blockMsg').length === 1 &&
+				$('body > .blockOverlay').length === 1 &&
+				$('body > .blockUI').length === 3;
+			$.unblockUI({ fadeOut: 0 });
+			return up && $('body > .blockUI').length === 0;
+		} ],
+
+		[ 'page block: fade path tears down completely', async function() {
+			$.blockUI({ fadeIn: 60, fadeOut: 60, message: 'x' });
+			await sleep(250);
+			var up = $('body > .blockMsg').length === 1;
+			$.unblockUI();
+			await settled('body > .blockUI', 0);
+			return up && $('body > .blockUI').length === 0;
+		} ],
+
+		[ 'fade path fires reset even though layer 1 is hidden', async function() {
+			// layer 1 is display:none unless forceIframe. If its fadeOut callback
+			// never ran, the layer-count would never reach zero and reset() would
+			// never fire - leaving the overlay stuck on screen.
+			$.blockUI({ fadeIn: 0, fadeOut: 60, message: 'x' });
+			$.unblockUI();
+			await settled('body > .blockUI', 0);
+			return $('body > .blockUI').length === 0 &&
+				$(window).data('blockUI.isBlocked') === 0;
+		} ],
+
+		[ 'borrowed DOM node is returned and re-hidden', async function() {
+			var before = document.getElementById('borrowed').parentNode;
+			$.blockUI({ message: $('#borrowed'), fadeIn: 0, fadeOut: 60 });
+			await sleep(120);
+			var moved = document.getElementById('borrowed').parentNode !== before;
+			$.unblockUI();
+            await settled('body > .blockUI', 0);
+			var el = document.getElementById('borrowed');
+			return moved && el.parentNode === before && el.style.display === 'none';
+		} ],
+
+		[ 'element block and unblock restores position', async function() {
+			var $t = $('#target');
+			$t.block({ fadeIn: 0, fadeOut: 0, message: 'x' });
+			var up = $t.find('> .blockMsg').length === 1 &&
+				$t[0].style.position === 'relative';
+			$t.unblock({ fadeOut: 0 });
+			return up && $t.find('> .blockUI').length === 0 &&
+				$t[0].style.position === 'static';
+		} ],
+
+		[ 'element block message is geometrically centred', async function() {
+			var $t = $('#target');
+			var worst = 0, detail = [];
+			for (var i = 0; i < 2; i++) {
+				var autoDetect = i === 0;
+				$t.block({ fadeIn: 0, fadeOut: 0, autoDetectCSS: autoDetect,
+					message: '<p class="blockUI-text">Saving&hellip;</p>' });
+				await sleep(30);
+				var p = $t[0].getBoundingClientRect();
+				var m = $t.find('> .blockMsg')[0].getBoundingClientRect();
+				var dx = Math.abs((m.left + m.width / 2) - (p.left + p.width / 2));
+				var dy = Math.abs((m.top + m.height / 2) - (p.top + p.height / 2));
+				var inside = m.left >= p.left - 1 && m.right <= p.right + 1 &&
+					m.top >= p.top - 1 && m.bottom <= p.bottom + 1;
+				worst = Math.max(worst, dx, dy);
+				if (!inside) detail.push((autoDetect ? 'auto' : 'inline') + ': overflows parent');
+				$t.unblock({ fadeOut: 0 });
+				await sleep(20);
+			}
+			if (worst > 1.5) detail.push('off centre by ' + worst.toFixed(1) + 'px');
+			return detail.length === 0 || detail.join('; ');
+		} ],
+
+		[ 'element block honours centerX / centerY false', async function() {
+			var $t = $('#target');
+			$t.block({ fadeIn: 0, fadeOut: 0, message: 'x', centerX: false, centerY: false,
+				autoDetectCSS: false });
+			var msg = $t.find('> .blockMsg')[0];
+			// nothing should translate it when centring is switched off
+			var t = getComputedStyle(msg).transform;
+			$t.unblock({ fadeOut: 0 });
+			return t === 'none' || t === '';
+		} ],
+
+		[ 'ignoreIfBlocked leaves the first block alone', async function() {
+			var $t = $('#target');
+			$t.block({ fadeIn: 0, fadeOut: 0, message: 'first' });
+			$t.block({ fadeIn: 0, fadeOut: 0, message: 'second', ignoreIfBlocked: true });
+			var txt = $t.find('> .blockMsg').text();
+			$t.unblock({ fadeOut: 0 });
+			return txt === 'first';
+		} ],
+
+		[ 'timeout auto-unblocks', async function() {
+			$.blockUI({ fadeIn: 0, fadeOut: 0, timeout: 80, message: 'x' });
+			await settled('body > .blockUI', 0, 1500);
+			return $('body > .blockUI').length === 0;
+		} ],
+
+		[ 'ariaRole auto: status for a plain message', async function() {
+			$.blockUI({ fadeIn: 0, fadeOut: 0, message: 'please wait' });
+			var r = $('body > .blockMsg').attr('role');
+			var live = $('body > .blockMsg').attr('aria-live');
+			var busy = document.body.getAttribute('aria-busy');
+			$.unblockUI({ fadeOut: 0 });
+			return r === 'status' && live === 'polite' && busy === 'true';
+		} ],
+
+		[ 'ariaRole auto: dialog when focusable content present', async function() {
+			$.blockUI({ fadeIn: 0, fadeOut: 0, message: '<div><input></div>' });
+			var $m = $('body > .blockMsg');
+			var r = $m.attr('role'), modal = $m.attr('aria-modal');
+			var busy = document.body.getAttribute('aria-busy');
+			$.unblockUI({ fadeOut: 0 });
+			// a dialog waits on the user; it is not "busy"
+			return r === 'dialog' && modal === 'true' && busy === null;
+		} ],
+
+		[ 'ariaRole null adds no role', async function() {
+			$.blockUI({ fadeIn: 0, fadeOut: 0, message: 'x', ariaRole: null });
+			var r = $('body > .blockMsg').attr('role');
+			$.unblockUI({ fadeOut: 0 });
+			return r === undefined;
+		} ],
+
+		[ 'aria-busy is cleared on unblock', async function() {
+			$.blockUI({ fadeIn: 0, fadeOut: 0, message: 'x' });
+			$.unblockUI({ fadeOut: 0 });
+			return document.body.getAttribute('aria-busy') === null;
+		} ],
+
+		[ 'focus moves in, then back out to the opener', async function() {
+			var opener = document.getElementById('opener');
+			opener.focus();
+			$.blockUI({ fadeIn: 0, fadeOut: 0, message: '<div><input id="inner"></div>' });
+			await sleep(60);
+			var went = document.activeElement.id === 'inner';
+			$.unblockUI({ fadeOut: 0 });
+			await sleep(60);
+			return went && document.activeElement === opener;
+		} ],
+
+		[ 'escapeToUnblock off by default', async function() {
+			$.blockUI({ fadeIn: 0, fadeOut: 0, message: 'x' });
+			document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+			await sleep(60);
+			var stillUp = $('body > .blockMsg').length === 1;
+			$.unblockUI({ fadeOut: 0 });
+			return stillUp;
+		} ],
+
+		[ 'escapeToUnblock closes when enabled', async function() {
+			$.blockUI({ fadeIn: 0, fadeOut: 0, message: 'x', escapeToUnblock: true });
+			document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+			await settled('body > .blockUI', 0, 1500);
+			return $('body > .blockUI').length === 0;
+		} ],
+
+		[ 'document handlers bind on block and unbind on unblock', async function() {
+			if (!$._data) return true;
+			var before = !!($._data(document, 'events') || {}).mousedown;
+			$.blockUI({ fadeIn: 0, fadeOut: 0, message: 'x' });
+			var during = !!($._data(document, 'events') || {}).mousedown;
+			$.unblockUI({ fadeOut: 0 });
+			var after = !!($._data(document, 'events') || {}).mousedown;
+			return !before && during && !after;
+		} ],
+
+		[ 'growlUI renders title and message', async function() {
+			$.growlUI('Title', 'Message', 80);
+			await sleep(100);
+			var ok = $('body > .blockMsg .growlUI h1').text() === 'Title' &&
+				$('body > .blockMsg .growlUI h2').text() === 'Message';
+			$.unblockUI({ fadeOut: 0 });
+			await settled('body > .blockUI', 0);
+			return ok;
+		} ],
+
+		[ 'overlay click handler receives the event', async function() {
+			var got = null;
+			$.blockUI({
+				fadeIn: 0, fadeOut: 0, message: 'x',
+				onOverlayClick: function(e) { got = e; }
+			});
+			$('body > .blockOverlay').trigger('mousedown');
+			$.unblockUI({ fadeOut: 0 });
+			return !!got && got.type === 'mousedown';
+		} ],
+
+		[ 'onBlock and onUnblock both fire', async function() {
+			var blocked = false, unblocked = false;
+			$.blockUI({
+				fadeIn: 0, fadeOut: 0, message: 'x',
+				onBlock: function() { blocked = true; },
+				onUnblock: function() { unblocked = true; }
+			});
+			$.unblockUI({ fadeOut: 0 });
+			return blocked && unblocked;
+		} ],
+
+		[ 'caller css always wins over defaults', async function() {
+			$.blockUI({ fadeIn: 0, fadeOut: 0, message: 'x',
+				css: { backgroundColor: 'rgb(1, 2, 3)' } });
+			var bg = $('body > .blockMsg')[0].style.backgroundColor;
+			$.unblockUI({ fadeOut: 0 });
+			return bg === 'rgb(1, 2, 3)';
+		} ],
+
+		[ withStylesheet ?
+			'stylesheet detected: no inline default styling' :
+			'no stylesheet: inline defaults applied',
+			async function() {
+				$.blockUI({ fadeIn: 0, fadeOut: 0, message: 'x' });
+				var style = $('body > .blockMsg')[0].style;
+				var detected = $.blockUI.usingStylesheet();
+				$.unblockUI({ fadeOut: 0 });
+				return withStylesheet ?
+					(detected === true && style.backgroundColor === '') :
+					(detected === false && style.backgroundColor !== '');
+			} ],
+
+		[ 'classic look is still available', async function() {
+			$.blockUI({
+				fadeIn: 0, fadeOut: 0,
+				message: $.blockUI.classicMessage,
+				css: $.blockUI.classicCSS,
+				overlayCSS: $.blockUI.classicOverlayCSS
+			});
+			var $m = $('body > .blockMsg');
+			var ok = $m[0].style.border === '3px solid rgb(170, 170, 170)' &&
+				$m.find('h1').text() === 'Please wait...';
+			$.unblockUI({ fadeOut: 0 });
+			return ok;
+		} ],
+
+		[ 'no unitless numbers on properties that need units', async function() {
+			var unitless = /^(opacity|zIndex|fontWeight|lineHeight|zoom|order|flexGrow|flexShrink|columnCount)$/;
+			var bad = [];
+			[ 'css', 'growlCSS', 'overlayCSS', 'themedCSS' ].forEach(function(k) {
+				$.each($.blockUI.defaults[k], function(prop, val) {
+					if (typeof val === 'number' && val !== 0 && !unitless.test(prop)) bad.push(k + '.' + prop);
+				});
+			});
+			return bad.length === 0 || bad.join(', ');
+		} ],
+
+		[ 'repeated block/unblock leaves nothing behind', async function() {
+			for (var i = 0; i < 5; i++) {
+				$.blockUI({ fadeIn: 0, fadeOut: 0, message: 'x' });
+				$.unblockUI({ fadeOut: 0 });
+			}
+			$('#target').block({ fadeIn: 0, fadeOut: 0, message: 'x' });
+			$('#target').unblock({ fadeOut: 0 });
+			return $('body > .blockUI').length === 0 &&
+				$('#target > .blockUI').length === 0 &&
+				$('[aria-busy]').length === 0;
+		} ],
+
+		[ 'blocking twice in a row replaces the first block', async function() {
+			$.blockUI({ fadeIn: 0, fadeOut: 0, message: 'first' });
+			$.blockUI({ fadeIn: 0, fadeOut: 0, message: 'second' });
+			var n = $('body > .blockMsg').length;
+			var txt = $('body > .blockMsg').text();
+			$.unblockUI({ fadeOut: 0 });
+			return n === 1 && txt === 'second';
+		} ]
+	];
+
+	var $out = $('#results');
+
+	(async function run() {
+		var pass = 0;
+		for (var i = 0; i < tests.length; i++) {
+			var name = tests[i][0], verdict, detail = '';
+			try {
+				var r = await tests[i][1]();
+				verdict = r === true;
+				if (typeof r === 'string') detail = r;
+			} catch (e) {
+				verdict = false;
+				detail = String(e && e.message || e);
+			}
+			if (verdict) pass++;
+			results.push({ name: name, ok: verdict, detail: detail });
+			$('<tr></tr>')
+				.append($('<td></td>').text(i + 1))
+				.append($('<td></td>').text(name))
+				.append($('<td></td>').addClass(verdict ? 'pass' : 'fail')
+					.text(verdict ? 'pass' : 'FAIL' + (detail ? ' - ' + detail : '')))
+				.appendTo($out);
+			// let the DOM settle between tests
+			await sleep(10);
+		}
+		var line = pass + ' / ' + tests.length + ' passing on jQuery ' + $.fn.jquery +
+			(withStylesheet ? ' + stylesheet' : ' (inline defaults)');
+		$('#summary').text(line).css('color', pass === tests.length ? '#1a7f52' : '#c0392b');
+		window.__blockUIResults = { pass: pass, total: tests.length, jq: $.fn.jquery,
+			stylesheet: withStylesheet, failures: results.filter(function(r) { return !r.ok; }) };
+		window.__blockUIDone = true;
+	})();
+
+})(jQuery);
+</script>
+</body>
+</html>

@@ -370,6 +370,14 @@ h3 {
 .opts code { font: 400 13px/1.6 var(--mono); color: var(--ink); }
 .opts td:last-child { color: var(--muted); }
 
+/* Long identifiers like quirksmodeOffsetHack set the table's min-content
+   width, which forced the whole page to scroll sideways on a phone. Let them
+   break instead. */
+.opts code, .checks code, .layerlist code { overflow-wrap: anywhere; }
+.opts, .checks { table-layout: fixed; }
+.opts th:first-child, .opts td:first-child { width: 34%; }
+.checks th:last-child, .checks td:last-child { width: 72px; }
+
 .tag {
 	display: inline-block;
 	padding: 1px 7px;
@@ -745,6 +753,34 @@ $.blockUI.defaults.css = $.blockUI.classicCSS;</code></pre>
 				<td><code>false</code></td>
 				<td>The iframe layer used to appear automatically in IE. Now it only
 				appears when you ask for it.</td>
+			</tr>
+			<tr>
+				<td><code>onBlock</code> <span class="tag">changed</span></td>
+				<td><code>null</code></td>
+				<td><code>this</code> used to be a DOM element with
+				<code>fadeIn&nbsp;&gt;&nbsp;0</code> and a jQuery object with
+				<code>fadeIn:&nbsp;0</code>. It is now always the message layer&rsquo;s
+				element, with the jQuery wrapper passed as the first argument.</td>
+			</tr>
+			<tr>
+				<td><code>$.growlUI</code> <span class="tag">changed</span></td>
+				<td>&mdash;</td>
+				<td>The title and message are inserted as text now, not HTML, so a
+				notice built from a server message can&rsquo;t inject markup.</td>
+			</tr>
+			<tr>
+				<td><code>title</code> <span class="tag">changed</span></td>
+				<td><code>null</code></td>
+				<td>Inserted as text now. With <code>theme:&nbsp;true</code> it used to
+				be concatenated into the layer markup, so a title built from server
+				data executed as HTML. Markup belongs in <code>message</code>.</td>
+			</tr>
+			<tr>
+				<td><code>iframeSrc</code> <span class="tag">changed</span></td>
+				<td><code>'about:blank'</code></td>
+				<td>Was <code>javascript:false</code> over HTTPS, for an IE&nbsp;6/7
+				mixed-content warning. A <code>javascript:</code> URL only trips a
+				strict <code>script-src</code> policy now.</td>
 			</tr>
 			<tr>
 				<td><code>allowBodyStretch</code>, <code>quirksmodeOffsetHack</code></td>

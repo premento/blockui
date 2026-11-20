@@ -305,6 +305,42 @@
 			return blocked && unblocked;
 		} ],
 
+		[ 'onBlock context is the same on the fade and instant paths', async function() {
+			// it used to be a DOM element with fadeIn > 0 and a jQuery object
+			// with fadeIn: 0, so `this` changed type with an unrelated option
+			function probe(ctx, arg) {
+				return (ctx && ctx.nodeType === 1 ? 'el' : typeof ctx) + '/' +
+					(arg && arg.jquery ? 'jq' : typeof arg);
+			}
+			var fade = null, instant = null;
+			$.blockUI({ fadeIn: 40, fadeOut: 0, message: 'x',
+				onBlock: function(l) { fade = probe(this, l); } });
+			await sleep(220);
+			$.unblockUI({ fadeOut: 0 });
+			$.blockUI({ fadeIn: 0, fadeOut: 0, message: 'x',
+				onBlock: function(l) { instant = probe(this, l); } });
+			$.unblockUI({ fadeOut: 0 });
+			if (fade !== instant) return 'fade=' + fade + ' instant=' + instant;
+			return fade === 'el/jq' || 'got ' + fade;
+		} ],
+
+		[ 'onUnblock receives (element, options)', async function() {
+			var got = null;
+			$.blockUI({ fadeIn: 0, fadeOut: 0, message: 'x' });
+			$.unblockUI({ fadeOut: 0, onUnblock: function(el, opts) {
+				got = (el === window) && !!opts && typeof opts === 'object';
+			} });
+			var pageOk = got === true;
+
+			got = null;
+			var $t = $('#target');
+			$t.block({ fadeIn: 0, fadeOut: 0, message: 'x' });
+			$t.unblock({ fadeOut: 0, onUnblock: function(el, opts) {
+				got = (el === $t[0]) && !!opts && typeof opts === 'object';
+			} });
+			return pageOk && got === true;
+		} ],
+
 		[ 'caller css always wins over defaults', async function() {
 			$.blockUI({ fadeIn: 0, fadeOut: 0, message: 'x',
 				css: { backgroundColor: 'rgb(1, 2, 3)' } });
@@ -361,6 +397,126 @@
 			return $('body > .blockUI').length === 0 &&
 				$('#target > .blockUI').length === 0 &&
 				$('[aria-busy]').length === 0;
+		} ],
+
+		[ 'title is inserted as text, not HTML', async function() {
+			// theme:true + title used to concatenate straight into markup that
+			// $() then parsed, so a title built from server data executed.
+			window.__titleProbe = 0;
+			$.blockUI({
+				theme: true, fadeIn: 0, fadeOut: 0, message: 'hi',
+				title: '<img src=x onerror="window.__titleProbe=1">'
+			});
+			var $t = $('body > .blockMsg .blockTitle');
+			var nodes = $t.find('*').length;
+			var text = $t.text();
+			$.unblockUI({ fadeOut: 0 });
+			await sleep(120);
+			if (window.__titleProbe) return 'the payload executed';
+			if (nodes !== 0) return 'title produced ' + nodes + ' element(s)';
+			return text === '<img src=x onerror="window.__titleProbe=1">' ||
+				'title text was mangled: ' + text;
+		} ],
+
+		[ 'blockMsgClass cannot break out of the class attribute', async function() {
+			$.blockUI({ blockMsgClass: 'x" data-injected="1', message: 'hi',
+				fadeIn: 0, fadeOut: 0 });
+			var injected = $('body [data-injected]').length;
+			var cls = $('body > .blockUI').last().attr('class');
+			$.unblockUI({ fadeOut: 0 });
+			if (injected !== 0) return 'injected an attribute';
+			return cls.indexOf('x" data-injected="1') > -1 ||
+				'class not applied literally: ' + cls;
+		} ],
+
+		[ 'iframe layer sets src as a property, not as markup', async function() {
+			$.blockUI({ forceIframe: true, message: 'hi', fadeIn: 0, fadeOut: 0,
+				iframeSrc: 'about:blank" data-injected="1' });
+			var injected = $('body [data-injected]').length;
+			var $f = $('body > iframe.blockUI');
+			var count = $f.length;
+			$.unblockUI({ fadeOut: 0 });
+			if (injected !== 0) return 'injected an attribute';
+			return count === 1 || 'iframe layer missing';
+		} ],
+
+		[ 'default iframeSrc is not a javascript: URL', async function() {
+			return $.blockUI.defaults.iframeSrc === 'about:blank' ||
+				'got ' + $.blockUI.defaults.iframeSrc;
+		} ],
+
+		[ 'focusableElements is treated as a selector, never as HTML', async function() {
+			window.__focusProbe = 0;
+			var original = $.blockUI.defaults.focusableElements;
+			try {
+				$.blockUI({
+					message: '<div><input></div>', fadeIn: 0, fadeOut: 0,
+					focusableElements: '<img src=x onerror="window.__focusProbe=1">'
+				});
+				$.unblockUI({ fadeOut: 0 });
+			} catch (e) {
+				// an invalid selector may throw; that is fine, executing is not
+				$.unblockUI({ fadeOut: 0 });
+			}
+			$.blockUI.defaults.focusableElements = original;
+			await sleep(120);
+			return window.__focusProbe === 0 || 'the payload executed';
+		} ],
+
+		[ 're-blocking during a fade-out does not destroy the borrowed node', async function() {
+			// remove() clears pageBlock when unblocking *starts*, so blocking again
+			// before the fade finished used to strand the outgoing block's reset():
+			// its borrowed message node was swept away with the stale layers and
+			// never returned to the document.
+			function mk(id) {
+				var old = document.getElementById(id);
+				if (old) old.parentNode.removeChild(old);
+				var d = document.createElement('div');
+				d.id = id;
+				d.style.display = 'none';
+				document.body.appendChild(d);
+				return d;
+			}
+			mk('raceA'); mk('raceB');
+
+			$.blockUI({ message: $('#raceA'), fadeIn: 0, fadeOut: 200 });
+			$.unblockUI();                                            // fade in flight
+			$.blockUI({ message: $('#raceB'), fadeIn: 0, fadeOut: 0 }); // re-block inside it
+			var layers = $('body > .blockUI').length;
+
+			await sleep(500);
+			$.unblockUI({ fadeOut: 0 });
+			await settled('body > .blockUI', 0);
+
+			var a = document.getElementById('raceA');
+			var b = document.getElementById('raceB');
+			var detail = [];
+			if (!a) detail.push('raceA was destroyed');
+			else if (a.parentNode !== document.body) detail.push('raceA not returned');
+			else if (a.style.display !== 'none') detail.push('raceA display not restored');
+			if (!b) detail.push('raceB was destroyed');
+			else if (b.parentNode !== document.body) detail.push('raceB not returned');
+			if (layers !== 3) detail.push('stale layers: ' + layers);
+			if ($('body > .blockUI').length) detail.push('layers left behind');
+
+			if (a) a.parentNode.removeChild(a);
+			if (b) b.parentNode.removeChild(b);
+			return detail.length === 0 || detail.join('; ');
+		} ],
+
+		[ 'a message selector that matches nothing does not throw', async function() {
+			// an empty jQuery set is truthy and has .jquery, so this used to
+			// blow up on msg[0].parentNode
+			$.blockUI({ message: $('#no-such-element'), fadeIn: 0, fadeOut: 0 });
+			var up = $('body > .blockUI').length === 3;
+			$.unblockUI({ fadeOut: 0 });
+			var down = $('body > .blockUI').length === 0;
+
+			var $t = $('#target');
+			$t.block({ message: $('#no-such-element'), fadeIn: 0, fadeOut: 0 });
+			var elUp = $t.find('> .blockUI').length === 3;
+			$t.unblock({ fadeOut: 0 });
+			return up && down && elUp && $t.find('> .blockUI').length === 0;
 		} ],
 
 		[ 'blocking twice in a row replaces the first block', async function() {

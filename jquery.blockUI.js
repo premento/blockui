@@ -215,10 +215,10 @@
 			font:            "14px/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
 		},
 
-		// IE issues: 'about:blank' fails on HTTPS and javascript:false is s-l-o-w
-		// (hat tip to Jorge H. N. de Vasconcelos)
-		/* jshint scripturl:true */
-		iframeSrc: /^https/i.test( window.location.href || "" ) ? "javascript:false" : "about:blank",
+		// Source for the iframe layer. This used to be javascript:false over
+		// HTTPS, to dodge a mixed-content warning in IE 6/7. Those are long gone,
+		// and a javascript: URL trips a strict script-src policy for no benefit.
+		iframeSrc: "about:blank",
 
 		// use an iframe layer under the overlay; handy for blocking plugins/embeds
 		// that would otherwise paint over it
@@ -467,8 +467,15 @@
 		themedCSS = $.extend( {}, $.blockUI.defaults.themedCSS, opts.themedCSS || {} );
 		msg = msg === undefined ? opts.message : msg;
 
-		// remove the current block (if there is one)
-		if ( full && pageBlock )
+		// Remove the current block, if there is one.
+		//
+		// Also catch a block whose fade-out is still in flight: remove() clears
+		// pageBlock as soon as unblocking starts, not when it finishes, so testing
+		// pageBlock alone misses that window. Blocking again inside it used to
+		// leave the outgoing block's reset() blocked by its own isBlocked guard,
+		// so a borrowed message node was never returned to the document - it was
+		// swept away with the stale layers and lost for good.
+		if ( full && ( pageBlock || $( "body" ).children( ".blockUI" ).length ) )
 			remove( window, { fadeOut: 0 } );
 
 		// remember where focus was, so it can be handed back on unblock
@@ -478,16 +485,22 @@
 		// if an existing element is being used as the blocking content then we capture
 		// its current place in the DOM (and current display style) so we can restore
 		// it when we unblock
-		if ( msg && typeof msg != "string" && ( msg.parentNode || msg.jquery ) ) {
-			var node = msg.jquery ? msg[ 0 ] : msg;
+		// A jQuery set that matched nothing is still truthy and still carries
+		// .jquery, so confirm there is a real node before reaching into it.
+		// $.blockUI({ message: $('#typo') }) used to throw here.
+		var msgNode = null;
+		if ( msg && typeof msg != "string" )
+			msgNode = msg.jquery ? msg[ 0 ] : msg;
+
+		if ( msgNode && msgNode.nodeType && ( msgNode.parentNode || msg.jquery ) ) {
 			var data = {};
 			$( el ).data( "blockUI.history", data );
-			data.el = node;
-			data.parent = node.parentNode;
-			data.display = node.style.display;
-			data.position = node.style.position;
+			data.el = msgNode;
+			data.parent = msgNode.parentNode;
+			data.display = msgNode.style.display;
+			data.position = msgNode.style.position;
 			if ( data.parent )
-				data.parent.removeChild( node );
+				data.parent.removeChild( msgNode );
 		}
 
 		$( el ).data( "blockUI.onUnblock", opts.onUnblock );
@@ -497,55 +510,88 @@
 		// layer1 is the iframe layer which is used to supress bleed through of underlying content
 		// layer2 is the overlay layer which has opacity and a wait cursor (by default)
 		// layer3 is the message content that is displayed while blocking
+		// These are built with DOM calls too, so baseZ and iframeSrc are set as
+		// properties rather than concatenated into markup. iframeSrc in particular
+		// sat unquoted-adjacent inside a src="..." attribute, where a value holding
+		// a quote could have introduced attributes of its own.
 		var lyr1, lyr2, lyr3, s;
-		if ( opts.forceIframe )
-			lyr1 = $( '<iframe class="blockUI" style="z-index:' + ( z++ ) +
-				';display:none;border:none;margin:0;padding:0;position:absolute;width:100%;' +
-				'height:100%;top:0;left:0" src="' + opts.iframeSrc +
-				'" aria-hidden="true" tabindex="-1"></iframe>' );
-		else
-			lyr1 = $( '<div class="blockUI" style="display:none"></div>' );
-
-		if ( opts.theme )
-			lyr2 = $( '<div class="blockUI blockOverlay ui-widget-overlay" style="z-index:' +
-				( z++ ) + ';display:none"></div>' );
-		else
-			lyr2 = $( '<div class="blockUI blockOverlay" style="z-index:' + ( z++ ) +
-				';display:none;border:none;margin:0;padding:0;width:100%;height:100%;' +
-				'top:0;left:0"></div>' );
-
-		if ( opts.theme && full ) {
-			s = '<div class="blockUI ' + opts.blockMsgClass +
-				' blockPage ui-dialog ui-widget ui-corner-all" style="z-index:' + ( z + 10 ) +
-				';display:none;position:fixed">';
-			if ( opts.title ) {
-				s += '<div class="ui-widget-header ui-dialog-titlebar ui-corner-all blockTitle">' +
-					( opts.title || "&nbsp;" ) + "</div>";
-			}
-			s += '<div class="ui-widget-content ui-dialog-content"></div>';
-			s += "</div>";
-		}
-		else if ( opts.theme ) {
-			s = '<div class="blockUI ' + opts.blockMsgClass +
-				' blockElement ui-dialog ui-widget ui-corner-all" style="z-index:' + ( z + 10 ) +
-				';display:none;position:absolute">';
-			if ( opts.title ) {
-				s += '<div class="ui-widget-header ui-dialog-titlebar ui-corner-all blockTitle">' +
-					( opts.title || "&nbsp;" ) + "</div>";
-			}
-			s += '<div class="ui-widget-content ui-dialog-content"></div>';
-			s += "</div>";
-		}
-		else if ( full ) {
-			s = '<div class="blockUI ' + opts.blockMsgClass +
-				' blockPage" style="z-index:' + ( z + 10 ) + ';display:none;position:fixed"></div>';
+		if ( opts.forceIframe ) {
+			lyr1 = $( "<iframe></iframe>" )
+				.attr( {
+					"class": "blockUI",
+					src: opts.iframeSrc,
+					"aria-hidden": "true",
+					tabindex: "-1"
+				} )
+				.css( {
+					zIndex: z++,
+					display: "none",
+					border: "none",
+					margin: 0,
+					padding: 0,
+					position: "absolute",
+					width: "100%",
+					height: "100%",
+					top: 0,
+					left: 0
+				} );
 		}
 		else {
-			s = '<div class="blockUI ' + opts.blockMsgClass +
-				' blockElement" style="z-index:' + ( z + 10 ) +
-				';display:none;position:absolute"></div>';
+			lyr1 = $( "<div></div>" )
+				.attr( "class", "blockUI" )
+				.css( "display", "none" );
 		}
-		lyr3 = $( s );
+
+		lyr2 = $( "<div></div>" )
+			.attr( "class", "blockUI blockOverlay" +
+				( opts.theme ? " ui-widget-overlay" : "" ) );
+
+		if ( opts.theme ) {
+			lyr2.css( { zIndex: z++, display: "none" } );
+		}
+		else {
+			lyr2.css( {
+				zIndex: z++,
+				display: "none",
+				border: "none",
+				margin: 0,
+				padding: 0,
+				width: "100%",
+				height: "100%",
+				top: 0,
+				left: 0
+			} );
+		}
+
+		// Built with DOM calls rather than by concatenating an HTML string.
+		// blockMsgClass used to be interpolated straight into a class attribute
+		// (so a stray quote could inject attributes) and `title` straight into
+		// markup (so it executed HTML). `title` is a string, like $.growlUI's -
+		// put markup in `message`, which is documented to take it.
+		s = "blockUI " + opts.blockMsgClass + ( full ? " blockPage" : " blockElement" );
+		if ( opts.theme )
+			s += " ui-dialog ui-widget ui-corner-all";
+
+		lyr3 = $( "<div></div>" )
+			.attr( "class", s )
+			.css( {
+				zIndex: z + 10,
+				display: "none",
+				position: full ? "fixed" : "absolute"
+			} );
+
+		if ( opts.theme ) {
+			if ( opts.title ) {
+				$( "<div></div>" )
+					.attr( "class",
+						"ui-widget-header ui-dialog-titlebar ui-corner-all blockTitle" )
+					.text( opts.title )
+					.appendTo( lyr3 );
+			}
+			$( "<div></div>" )
+				.attr( "class", "ui-widget-content ui-dialog-content" )
+				.appendTo( lyr3 );
+		}
 
 		// if we have a message, style it
 		if ( msg ) {
@@ -597,8 +643,16 @@
 
 		if ( opts.forceIframe && opts.showOverlay )
 			lyr1.show(); // opacity is zero
+
+		// onBlock used to be handed a DOM element on the fade path and a jQuery
+		// object on the instant one, so `this` changed type with an unrelated
+		// option. It is now always the message layer's element, with the jQuery
+		// wrapper passed as the first argument.
+		var cb = opts.onBlock ? function() {
+			opts.onBlock.call( lyr3[ 0 ], lyr3 );
+		} : noOp;
+
 		if ( opts.fadeIn ) {
-			var cb = opts.onBlock ? opts.onBlock : noOp;
 			var cb1 = ( opts.showOverlay && !msg ) ? cb : noOp;
 			var cb2 = msg ? cb : noOp;
 			if ( opts.showOverlay )
@@ -611,8 +665,7 @@
 				lyr2.show();
 			if ( msg )
 				lyr3.show();
-			if ( opts.onBlock )
-				opts.onBlock.bind( lyr3 )();
+			cb();
 		}
 
 		// bind key and mouse events
@@ -620,7 +673,9 @@
 
 		if ( full ) {
 			pageBlock = lyr3[ 0 ];
-			pageBlockEls = $( opts.focusableElements, pageBlock );
+			// $( selector, context ) still parses a fully HTML-shaped string as
+			// markup. .find() only ever runs it as a selector.
+			pageBlockEls = $( pageBlock ).find( opts.focusableElements );
 			if ( opts.focusInput )
 				setTimeout( focus, 20 );
 		}

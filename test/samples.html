@@ -1,0 +1,686 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>blockUI — DOCS.md samples</title>
+<style>
+	body { font: 14px/1.5 system-ui, sans-serif; margin: 24px; max-width: 980px; }
+	h1 { font-size: 20px; margin: 0 0 4px; }
+	.meta { color: #666; margin: 0 0 18px; }
+	table { border-collapse: collapse; width: 100%; }
+	td, th { padding: 5px 10px 5px 0; border-bottom: 1px solid #e3e8ee; text-align: left;
+		vertical-align: top; }
+	th { font-size: 12px; color: #666; }
+	.pass { color: #1a7f52; font-weight: 600; }
+	.fail { color: #c0392b; font-weight: 600; }
+	.sec { color: #666; font-size: 12px; text-transform: none; padding-top: 14px; }
+	#summary { font-size: 16px; font-weight: 600; margin: 16px 0; }
+	#results-table, #panel { background: #eef2f6; padding: 10px; min-height: 70px; }
+	#panel { margin-top: 10px; }
+	nav a { margin-right: 12px; }
+</style>
+</head>
+<body>
+
+<h1>blockUI — every sample from DOCS.md</h1>
+<p class="meta">
+	Each row runs the corresponding sample verbatim and asserts it did what the
+	documentation says.
+	<nav>
+		<a href="?jq=3">jQuery 3.8</a>
+		<a href="?jq=4">jQuery 4.1</a>
+		<a href="?jq=4&amp;css=1">jQuery 4.1 + stylesheet</a>
+		<a href="?jq=3&amp;css=1">jQuery 3.8 + stylesheet</a>
+	</nav>
+</p>
+
+<div id="summary">running&hellip;</div>
+
+<table>
+	<thead><tr><th>#</th><th>Sample</th><th>Result</th></tr></thead>
+	<tbody id="results"></tbody>
+</table>
+
+<div id="results-table">A table that reloads.</div>
+<div id="panel">A panel to block.</div>
+<button id="opener" type="button">opener</button>
+
+<!-- used by the "borrowing an element" and confirm-dialog samples -->
+<div id="myPanel" style="display:none"><p>Borrowed panel</p></div>
+<div id="confirmBox" style="display:none">
+	<p id="confirmText"></p>
+	<button type="button" data-answer="no">Cancel</button>
+	<button type="button" data-answer="yes">Delete</button>
+</div>
+<div id="uploadProgress" style="display:none"><progress value="0" max="100"></progress></div>
+
+<script>
+(function() {
+	window.requestAnimationFrame = function(cb) {
+		return setTimeout(function() { cb(performance.now()); }, 16);
+	};
+	window.cancelAnimationFrame = function(id) { clearTimeout(id); };
+
+	var p = new URLSearchParams(location.search);
+	var ver = p.get('jq') === '3' ? '3.8.0' : '4.1.0';
+	if (p.get('css') === '1') {
+		document.write('<link rel="stylesheet" href="../jquery.blockUI.css">');
+	}
+	document.write('<scr' + 'ipt src="../demo/vendor/jquery-' + ver + '.js"><\/scr' + 'ipt>');
+})();
+</script>
+<script src="../jquery.blockUI.js"></script>
+<script>
+(function($) {
+	"use strict";
+
+	var withStylesheet = new URLSearchParams(location.search).get('css') === '1';
+	function sleep(ms) { return new Promise(function(r) { setTimeout(r, ms); }); }
+
+	// wait for blockUI to finish tearing down
+	function settled(sel, want, limit) {
+		limit = limit || 3000;
+		var start = Date.now();
+		return new Promise(function(resolve) {
+			(function poll() {
+				if ($(sel).length === want || Date.now() - start > limit) return resolve();
+				setTimeout(poll, 25);
+			})();
+		});
+	}
+	function clear() {
+		$.unblockUI({ fadeOut: 0 });
+		$('#panel').unblock({ fadeOut: 0 });
+		$('#results-table').unblock({ fadeOut: 0 });
+		return settled('.blockUI', 0, 1500);
+	}
+
+	var OK_URL = '../jquery.blockUI.css';     // exists -> 200
+	var BAD_URL = '../definitely-not-here';   // -> 404
+
+	// ---- the samples, lifted from DOCS.md -----------------------------------
+
+	var tests = [
+
+		[ 'section', 'Blocking the page' ],
+
+		[ 'default block, custom message, overlay-only, unblock', async function() {
+			$.blockUI();
+			var a = $('body > .blockMsg').length === 1;
+			$.unblockUI({ fadeOut: 0 });
+
+			$.blockUI({ message: '<h3>Uploading</h3>' });
+			var b = $('body > .blockMsg h3').text() === 'Uploading';
+			$.unblockUI({ fadeOut: 0 });
+
+			$.blockUI({ message: null });
+			// overlay present, message layer never shown
+			var c = $('body > .blockOverlay').length === 1 &&
+				$('body > .blockMsg').is(':hidden');
+			$.unblockUI({ fadeOut: 0 });
+			await settled('body > .blockUI', 0);
+			return a && b && c;
+		} ],
+
+		[ 'blocking twice replaces rather than stacks', async function() {
+			$.blockUI({ message: 'First', fadeIn: 0 });
+			$.blockUI({ message: 'Second', fadeIn: 0 });
+			var one = $('body > .blockMsg').length === 1;
+			var txt = $('body > .blockMsg').text() === 'Second';
+			$.unblockUI({ fadeOut: 0 });
+			return one && txt && $('body > .blockUI').length === 0;
+		} ],
+
+		[ 'timeout clears the block by itself', async function() {
+			$.blockUI({ message: 'Saved', timeout: 120, fadeIn: 0, fadeOut: 0 });
+			await settled('body > .blockUI', 0, 2000);
+			return $('body > .blockUI').length === 0;
+		} ],
+
+		[ 'section', 'Blocking an element' ],
+
+		[ 'element block sets, then restores, position', async function() {
+			var $p = $('#panel');
+			$p.block({ message: 'Saving…', fadeIn: 0 });
+			var up = $p.find('> .blockMsg').length === 1 &&
+				$p[0].style.position === 'relative';
+			$p.unblock({ fadeOut: 0 });
+			return up && $p[0].style.position === 'static' &&
+				$p.find('> .blockUI').length === 0;
+		} ],
+
+		[ 'blocking a set blocks each element independently', async function() {
+			var $set = $('#panel, #results-table');
+			$set.block({ message: 'Loading…', fadeIn: 0 });
+			var both = $('#panel > .blockMsg').length === 1 &&
+				$('#results-table > .blockMsg').length === 1;
+			// page block is untouched by element blocks
+			var noPageBlock = $('body > .blockUI').length === 0;
+			$set.unblock({ fadeOut: 0 });
+			return both && noPageBlock && $set.find('> .blockUI').length === 0;
+		} ],
+
+		[ '$.unblockUI() does not clear element blocks', async function() {
+			$('#panel').block({ message: 'x', fadeIn: 0 });
+			$.unblockUI({ fadeOut: 0 });
+			var survived = $('#panel > .blockMsg').length === 1;
+			$('#panel').unblock({ fadeOut: 0 });
+			return survived;
+		} ],
+
+		[ 'centerX / centerY false with explicit placement', async function() {
+			var $p = $('#panel');
+			$p.block({
+				message: 'Top left', fadeIn: 0,
+				centerX: false, centerY: false,
+				css: { top: '8px', left: '8px', transform: 'none' }
+			});
+			var msg = $p.find('> .blockMsg')[0];
+			var ok = msg.style.top === '8px' && msg.style.left === '8px' &&
+				getComputedStyle(msg).transform === 'none';
+			$p.unblock({ fadeOut: 0 });
+			return ok;
+		} ],
+
+		[ 'section', 'Growl notices' ],
+
+		[ 'growlUI renders title and message', async function() {
+			$.growlUI('Deployed', 'build 4821 is live', 120);
+			await sleep(60);
+			var ok = $('body > .blockMsg .growlUI h1').text() === 'Deployed' &&
+				$('body > .blockMsg .growlUI h2').text() === 'build 4821 is live';
+			await clear();
+			return ok;
+		} ],
+
+		[ 'growlUI inserts title/message as text, not HTML', async function() {
+			$.growlUI('<img src=x onerror="window.__xss=1">', '<b>bold?</b>', 120);
+			await sleep(60);
+			var $h1 = $('body > .blockMsg .growlUI h1');
+			var $h2 = $('body > .blockMsg .growlUI h2');
+			var noElements = $h1.find('*').length === 0 && $h2.find('*').length === 0;
+			var literal = $h2.text() === '<b>bold?</b>';
+			await clear();
+			return noElements && literal && !window.__xss;
+		} ],
+
+		[ 'section', 'Callbacks and lifecycle' ],
+
+		[ 'onBlock: `this` is the element, arg is the jQuery layer', async function() {
+			var seen = null;
+			$.blockUI({
+				message: '<p class="blockUI-text">Working…</p>', fadeIn: 0, fadeOut: 0,
+				onBlock: function($layer) {
+					$layer.find('.blockUI-text').text('Still working…');
+					seen = (this.nodeType === 1) && !!($layer && $layer.jquery);
+				}
+			});
+			var applied = $('body > .blockMsg .blockUI-text').text() === 'Still working…';
+			$.unblockUI({ fadeOut: 0 });
+			return seen === true && applied;
+		} ],
+
+		[ 'onUnblock receives (element, options)', async function() {
+			var pageEl = null, elemEl = null;
+			$.blockUI({ fadeIn: 0, fadeOut: 0, message: 'x',
+				onUnblock: function(el, opts) { pageEl = (el === window) && !!opts; } });
+			$.unblockUI({ fadeOut: 0 });
+
+			var $p = $('#panel');
+			$p.block({ fadeIn: 0, fadeOut: 0, message: 'x',
+				onUnblock: function(el, opts) { elemEl = (el === $p[0]) && !!opts; } });
+			$p.unblock({ fadeOut: 0 });
+			return pageEl === true && elemEl === true;
+		} ],
+
+		[ 'onUnblock given at unblock time wins', async function() {
+			var log = [];
+			$.blockUI({ fadeIn: 0, fadeOut: 0, message: 'x',
+				onUnblock: function() { log.push('A'); } });
+			$.unblockUI({ fadeOut: 0, onUnblock: function() { log.push('B'); } });
+			return log.join(',') === 'B';
+		} ],
+
+		[ 'onOverlayClick fires and makes the cursor a pointer', async function() {
+			var got = null;
+			$.blockUI({
+				fadeIn: 0, fadeOut: 0, message: 'x',
+				onOverlayClick: function(e) { got = e; }
+			});
+			var cursor = $('body > .blockOverlay')[0].style.cursor;
+			$('body > .blockOverlay').trigger('mousedown');
+			$.unblockUI({ fadeOut: 0 });
+			return !!got && got.type === 'mousedown' &&
+				(withStylesheet ? true : cursor === 'pointer');
+		} ],
+
+		[ 'section', 'Styling' ],
+
+		[ 'blockPage / blockElement classes distinguish the two', async function() {
+			$.blockUI({ fadeIn: 0, fadeOut: 0, message: 'x' });
+			var page = $('body > .blockMsg').hasClass('blockPage');
+			$.unblockUI({ fadeOut: 0 });
+			$('#panel').block({ fadeIn: 0, fadeOut: 0, message: 'x' });
+			var elem = $('#panel > .blockMsg').hasClass('blockElement');
+			$('#panel').unblock({ fadeOut: 0 });
+			return page && elem;
+		} ],
+
+		[ 'css / overlayCSS are applied verbatim', async function() {
+			$.blockUI({
+				fadeIn: 0, fadeOut: 0, message: 'x',
+				css: { backgroundColor: 'rgb(22, 32, 44)', color: 'rgb(255, 255, 255)',
+					borderRadius: '8px', padding: '20px 24px' },
+				overlayCSS: { backgroundColor: 'rgb(232, 163, 23)', opacity: 0.45 }
+			});
+			var m = $('body > .blockMsg')[0].style;
+			var o = $('body > .blockOverlay')[0].style;
+			var ok = m.backgroundColor === 'rgb(22, 32, 44)' &&
+				m.borderRadius === '8px' && m.padding === '20px 24px' &&
+				o.backgroundColor === 'rgb(232, 163, 23)' &&
+				parseFloat(o.opacity) === 0.45;
+			$.unblockUI({ fadeOut: 0 });
+			return ok;
+		} ],
+
+		[ 'the classic 2007 look is restorable', async function() {
+			$.blockUI({
+				fadeIn: 0, fadeOut: 0,
+				message: $.blockUI.classicMessage,
+				css: $.blockUI.classicCSS,
+				overlayCSS: $.blockUI.classicOverlayCSS
+			});
+			var $m = $('body > .blockMsg');
+			var ok = $m[0].style.border === '3px solid rgb(170, 170, 170)' &&
+				$m[0].style.width === '30%' &&
+				$m.find('h1').text() === 'Please wait...' &&
+				$('body > .blockOverlay')[0].style.backgroundColor === 'rgb(0, 0, 0)';
+			$.unblockUI({ fadeOut: 0 });
+			return ok;
+		} ],
+
+		[ 'theme:true builds jQuery UI dialog markup', async function() {
+			$.blockUI({
+				theme: true, title: 'Please wait', message: 'Contacting the server…',
+				fadeIn: 0, fadeOut: 0
+			});
+			var $m = $('body > .blockMsg');
+			var ok = $m.hasClass('ui-dialog') && $m.hasClass('ui-widget') &&
+				$m.find('.ui-dialog-titlebar').text() === 'Please wait' &&
+				$m.find('.ui-dialog-content').text() === 'Contacting the server…' &&
+				$m[0].style.width === '30%';     // themedCSS, not css
+			$.unblockUI({ fadeOut: 0 });
+			return ok;
+		} ],
+
+		[ withStylesheet ?
+			'usingStylesheet() is true and no inline defaults are applied' :
+			'usingStylesheet() is false and inline defaults are applied',
+			async function() {
+				$.blockUI({ fadeIn: 0, fadeOut: 0, message: 'x' });
+				var bg = $('body > .blockMsg')[0].style.backgroundColor;
+				var detected = $.blockUI.usingStylesheet();
+				$.unblockUI({ fadeOut: 0 });
+				return withStylesheet ?
+					(detected === true && bg === '') :
+					(detected === false && bg !== '');
+			} ],
+
+		[ 'section', 'Accessibility' ],
+
+		[ 'ariaRole auto / explicit / null', async function() {
+			function roleFor(opts) {
+				$.blockUI($.extend({ fadeIn: 0, fadeOut: 0 }, opts));
+				var r = $('body > .blockMsg').attr('role');
+				$.unblockUI({ fadeOut: 0 });
+				return r;
+			}
+			return roleFor({ message: 'Uploading…' }) === 'status' &&
+				roleFor({ message: '<div><input></div>' }) === 'dialog' &&
+				roleFor({ message: 'Uploading…', ariaRole: 'dialog' }) === 'dialog' &&
+				roleFor({ message: '<div><input></div>', ariaRole: 'status' }) === 'status' &&
+				roleFor({ message: 'Decorative', ariaRole: null }) === undefined;
+		} ],
+
+		[ 'aria-busy set for progress, not for a dialog, cleared after', async function() {
+			$.blockUI({ fadeIn: 0, fadeOut: 0, message: 'Uploading…' });
+			var busy = document.body.getAttribute('aria-busy') === 'true';
+			$.unblockUI({ fadeOut: 0 });
+			var cleared = document.body.getAttribute('aria-busy') === null;
+
+			$.blockUI({ fadeIn: 0, fadeOut: 0, message: '<div><input></div>' });
+			var dialogNotBusy = document.body.getAttribute('aria-busy') === null;
+			$.unblockUI({ fadeOut: 0 });
+			return busy && cleared && dialogNotBusy;
+		} ],
+
+		[ 'focus moves in and is handed back to the opener', async function() {
+			var opener = document.getElementById('opener');
+			opener.focus();
+			$.blockUI({ fadeIn: 0, fadeOut: 0,
+				message: '<div><input id="innerField"></div>' });
+			await sleep(60);
+			var went = document.activeElement.id === 'innerField';
+			$.unblockUI({ fadeOut: 0 });
+			await sleep(60);
+			return went && document.activeElement === opener;
+		} ],
+
+		[ 'escapeToUnblock: off by default, closes when enabled', async function() {
+			function esc() {
+				document.dispatchEvent(new KeyboardEvent('keydown',
+					{ key: 'Escape', bubbles: true }));
+			}
+			$.blockUI({ fadeIn: 0, fadeOut: 0, message: 'x' });
+			esc();
+			await sleep(50);
+			var stayed = $('body > .blockMsg').length === 1;
+			$.unblockUI({ fadeOut: 0 });
+
+			$.blockUI({ fadeIn: 0, fadeOut: 0, message: 'x', escapeToUnblock: true });
+			esc();
+			await settled('body > .blockUI', 0, 1500);
+			return stayed && $('body > .blockUI').length === 0;
+		} ],
+
+		[ 'widening focusableElements is honoured', async function() {
+			var original = $.blockUI.defaults.focusableElements;
+			$.blockUI.defaults.focusableElements =
+				'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])';
+			$.blockUI({ fadeIn: 0, fadeOut: 0,
+				message: '<div><span tabindex="0" id="spanFocus">focusable span</span></div>' });
+			await sleep(60);
+			var ok = document.activeElement.id === 'spanFocus';
+			$.unblockUI({ fadeOut: 0 });
+			$.blockUI.defaults.focusableElements = original;
+			return ok;
+		} ],
+
+		[ 'section', 'Recipes' ],
+
+		[ 'ajaxStart / ajaxStop block for any request', async function() {
+			// Don't sleep to "wait for" the block: timers are throttled hard in a
+			// background tab, so a sleep can outlast the request and see the block
+			// already gone. ajaxStart fires synchronously with the send, so assert
+			// straight after issuing the request.
+			var started = false, stopped = false, blockedAtStart = false;
+			function onStart() { $.blockUI({ fadeIn: 0, fadeOut: 0 }); started = true; }
+			function onStop()  { $.unblockUI({ fadeOut: 0 }); stopped = true; }
+			$(document).ajaxStart(onStart).ajaxStop(onStop);
+			try {
+				var req = $.get(OK_URL);
+				blockedAtStart = $('body > .blockMsg').length === 1;
+				await req;
+				await settled('body > .blockUI', 0, 2000);
+			} finally {
+				$(document).off('ajaxStart', onStart).off('ajaxStop', onStop);
+			}
+			if (!started) return 'ajaxStart never fired';
+			if (!blockedAtStart) return 'not blocked when the request was sent';
+			if (!stopped) return 'ajaxStop never fired';
+			return $('body > .blockUI').length === 0 || 'layers left behind';
+		} ],
+
+		[ 'overlapping requests produce a single block', async function() {
+			var starts = 0, stops = 0;
+			function onStart() { starts++; $.blockUI({ fadeIn: 0, fadeOut: 0 }); }
+			function onStop()  { stops++;  $.unblockUI({ fadeOut: 0 }); }
+			$(document).ajaxStart(onStart).ajaxStop(onStop);
+			try {
+				var a = $.get(OK_URL), b = $.get(OK_URL), c = $.get(OK_URL);
+				var oneBlock = $('body > .blockMsg').length === 1;
+				await Promise.all([ a, b, c ].map(function(r) {
+					return Promise.resolve(r).catch(function() {});
+				}));
+				await settled('body > .blockUI', 0, 2000);
+				if (!oneBlock) return 'more than one block layer';
+			} finally {
+				$(document).off('ajaxStart', onStart).off('ajaxStop', onStop);
+			}
+			// ajaxStart fires once for the batch, ajaxStop once at the end
+			return (starts === 1 && stops === 1) || 'starts=' + starts + ' stops=' + stops;
+		} ],
+
+		[ 'beforeSend / complete block one request, including on failure', async function() {
+			var seen = { during: false, after: null };
+			await new Promise(function(resolve) {
+				$.ajax({
+					url: BAD_URL,
+					beforeSend: function() {
+						$('#panel').block({ message: 'Saving…', fadeIn: 0 });
+						seen.during = $('#panel > .blockMsg').length === 1;
+					},
+					complete: function() {
+						$('#panel').unblock({ fadeOut: 0 });
+						seen.after = $('#panel > .blockUI').length;
+						resolve();
+					}
+				});
+			});
+			// complete fires on a 404 too, so the panel is not left stuck
+			return seen.during && seen.after === 0;
+		} ],
+
+		[ 'blockWhile() wrapper: resolve path', async function() {
+			function blockWhile(promise, opts) {
+				$.blockUI(opts);
+				return Promise.resolve(promise).then(
+					function(value)  { $.unblockUI(); return value; },
+					function(reason) { $.unblockUI(); throw reason; }
+				);
+			}
+			var during = null;
+			var value = await blockWhile(
+				sleep(60).then(function() {
+					during = $('body > .blockMsg').length === 1;
+					return 'done';
+				}),
+				{ message: 'Building the report…', fadeIn: 0, fadeOut: 0 }
+			);
+			await settled('body > .blockUI', 0);
+			return during === true && value === 'done' &&
+				$('body > .blockUI').length === 0;
+		} ],
+
+		[ 'blockWhile() wrapper: reject path still unblocks', async function() {
+			function blockWhile(promise, opts) {
+				$.blockUI(opts);
+				return Promise.resolve(promise).then(
+					function(value)  { $.unblockUI(); return value; },
+					function(reason) { $.unblockUI(); throw reason; }
+				);
+			}
+			var caught = null;
+			try {
+				await blockWhile(
+					sleep(40).then(function() { throw new Error('boom'); }),
+					{ message: 'x', fadeIn: 0, fadeOut: 0 }
+				);
+			} catch (e) {
+				caught = e.message;
+			}
+			await settled('body > .blockUI', 0);
+			return caught === 'boom' && $('body > .blockUI').length === 0;
+		} ],
+
+		[ 'confirmBox(): the "yes" button resolves true', async function() {
+			var answer = confirmBox('Delete this project?');
+			await sleep(60);
+			$('#confirmBox [data-answer="yes"]').trigger('click');
+			var result = await answer;
+			await settled('body > .blockUI', 0);
+			return result === true &&
+				document.getElementById('confirmBox').parentNode === document.body;
+		} ],
+
+		[ 'confirmBox(): Escape resolves false', async function() {
+			var answer = confirmBox('Delete this project?');
+			await sleep(60);
+			document.dispatchEvent(new KeyboardEvent('keydown',
+				{ key: 'Escape', bubbles: true }));
+			var result = await answer;
+			await settled('body > .blockUI', 0);
+			return result === false;
+		} ],
+
+		[ 'updating the message in place does not rebuild the panel', async function() {
+			$.blockUI({ message: '<p class="blockUI-text">Uploading 0%</p>', fadeIn: 0 });
+			var before = $('body > .blockMsg')[0];
+			$('.blockMsg .blockUI-text').text('Uploading 42%');
+			var after = $('body > .blockMsg')[0];
+			var ok = before === after &&
+				$('body > .blockMsg .blockUI-text').text() === 'Uploading 42%';
+			$.unblockUI({ fadeOut: 0 });
+			return ok;
+		} ],
+
+		[ 'error block with a timeout clears itself', async function() {
+			$.blockUI({
+				message: '<p class="blockUI-text">Couldn’t save. Try again.</p>',
+				css: { backgroundColor: 'rgb(255, 241, 240)', color: 'rgb(122, 28, 18)' },
+				timeout: 120, fadeIn: 0, fadeOut: 0, escapeToUnblock: true
+			});
+			var styled = $('body > .blockMsg')[0].style.backgroundColor ===
+				'rgb(255, 241, 240)';
+			await settled('body > .blockUI', 0, 2000);
+			return styled && $('body > .blockUI').length === 0;
+		} ],
+
+		[ 'reloading a table behind a bare overlay', async function() {
+			var $table = $('#results-table');
+			$table.block({ message: null, fadeIn: 0 });
+			var overlayOnly = $table.find('> .blockOverlay').length === 1 &&
+				$table.find('> .blockMsg').is(':hidden');
+			await $.get(OK_URL);
+			$table.unblock({ fadeOut: 0 });
+			return overlayOnly && $table.find('> .blockUI').length === 0;
+		} ],
+
+		[ 'a borrowed node is moved, then put back and re-hidden', async function() {
+			var el = document.getElementById('myPanel');
+			var home = el.parentNode;
+			$.blockUI({ message: $('#myPanel'), fadeIn: 0, fadeOut: 0 });
+			var moved = el.parentNode !== home && $('body > .blockMsg').find(el).length === 1;
+			var shownWhileBlocked = el.style.display !== 'none';
+			$.unblockUI({ fadeOut: 0 });
+			await settled('body > .blockUI', 0);
+			return moved && shownWhileBlocked &&
+				el.parentNode === home && el.style.display === 'none';
+		} ],
+
+		[ 'handlers on a borrowed node survive the round trip', async function() {
+			var fired = 0;
+			$('#myPanel').on('click.sample', function() { fired++; });
+			$.blockUI({ message: $('#myPanel'), fadeIn: 0, fadeOut: 0 });
+			$('#myPanel').trigger('click');
+			$.unblockUI({ fadeOut: 0 });
+			await settled('body > .blockUI', 0);
+			$('#myPanel').trigger('click');
+			$('#myPanel').off('.sample');
+			return fired === 2;
+		} ],
+
+		[ 'blocking the page around a progress element', async function() {
+			$.blockUI({
+				message: $('#uploadProgress'),
+				css: { width: '320px', padding: '20px' },
+				overlayCSS: { cursor: 'default' },
+				fadeIn: 0, fadeOut: 0
+			});
+			var ok = $('body > .blockMsg progress').length === 1 &&
+				$('body > .blockOverlay')[0].style.cursor === 'default';
+			$.unblockUI({ fadeOut: 0 });
+			await settled('body > .blockUI', 0);
+			return ok;
+		} ],
+
+		[ 'ignoreIfBlocked leaves the first block in place', async function() {
+			var $p = $('#panel');
+			$p.block({ message: 'First', fadeIn: 0 });
+			$p.block({ message: 'Second', fadeIn: 0, ignoreIfBlocked: true });
+			var txt = $p.find('> .blockMsg').text();
+			$p.unblock({ fadeOut: 0 });
+			return txt === 'First';
+		} ],
+
+		[ 'section', 'Housekeeping' ],
+
+		[ 'nothing is left behind after all of the above', async function() {
+			await clear();
+			return $('.blockUI').length === 0 &&
+				$('[aria-busy]').length === 0 &&
+				document.getElementById('myPanel').parentNode === document.body &&
+				document.getElementById('confirmBox').parentNode === document.body;
+		} ]
+	];
+
+	// the confirm-dialog recipe, exactly as documented
+	function confirmBox(text) {
+		return new Promise(function(resolve) {
+			$('#confirmText').text(text);
+
+			$('#confirmBox').on('click.confirm', '[data-answer]', function() {
+				var answer = $(this).data('answer') === 'yes';
+				$('#confirmBox').off('.confirm');
+				$.unblockUI();
+				resolve(answer);
+			});
+
+			$.blockUI({
+				message: $('#confirmBox'),
+				ariaRole: 'dialog',
+				escapeToUnblock: true,
+				fadeIn: 0,
+				onUnblock: function() {
+					$('#confirmBox').off('.confirm');
+					resolve(false);
+				}
+			});
+		});
+	}
+
+	var $out = $('#results');
+
+	(async function run() {
+		var pass = 0, total = 0, n = 0, failures = [];
+		for (var i = 0; i < tests.length; i++) {
+			if (tests[i][0] === 'section') {
+				$('<tr></tr>').append(
+					$('<td colspan="3"></td>').addClass('sec').text(tests[i][1])
+				).appendTo($out);
+				continue;
+			}
+			total++; n++;
+			var name = tests[i][0], ok, detail = '';
+			try {
+				var r = await tests[i][1]();
+				ok = r === true;
+				if (typeof r === 'string') detail = r;
+			} catch (e) {
+				ok = false;
+				detail = String(e && e.message || e);
+			}
+			if (ok) pass++; else failures.push({ name: name, detail: detail });
+			$('<tr></tr>')
+				.append($('<td></td>').text(n))
+				.append($('<td></td>').text(name))
+				.append($('<td></td>').addClass(ok ? 'pass' : 'fail')
+					.text(ok ? 'pass' : 'FAIL' + (detail ? ' - ' + detail : '')))
+				.appendTo($out);
+			await clear();
+			await sleep(10);
+		}
+		$('#summary')
+			.text(pass + ' / ' + total + ' samples run on jQuery ' + $.fn.jquery +
+				(withStylesheet ? ' + stylesheet' : ' (inline defaults)'))
+			.css('color', pass === total ? '#1a7f52' : '#c0392b');
+		window.__blockUISamples = { pass: pass, total: total, jq: $.fn.jquery,
+			stylesheet: withStylesheet, failures: failures };
+		window.__blockUIDone = true;
+	})();
+
+})(jQuery);
+</script>
+</body>
+</html>

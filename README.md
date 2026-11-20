@@ -33,15 +33,17 @@ $(document).on('click', '#myButton', function() {
 Open `demo/index.html` for a live demo of every option, plus a set of
 compatibility checks you can run against either jQuery version.
 
+**[Full reference documentation, with worked samples, is in DOCS.md.](DOCS.md)**
+
 ## Upgrading from 2.70
 
 On jQuery 4, blockUI 2.70 throws `$.isFunction is not a function` while the file
 is still loading, so `$.blockUI` is never defined at all. 2.80 fixes that and the
 rest of the jQuery 4 fallout.
 
-Your existing calls keep working. Two visible changes to be aware of:
+Your existing calls keep working. Six visible changes to be aware of:
 
-**The default look changed.** To put the 2007 styling back:
+**1. The default look changed.** To put the 2007 styling back:
 
 ```js
 $.blockUI.defaults.message    = $.blockUI.classicMessage;
@@ -49,9 +51,35 @@ $.blockUI.defaults.css        = $.blockUI.classicCSS;
 $.blockUI.defaults.overlayCSS = $.blockUI.classicOverlayCSS;
 ```
 
-**The iframe layer is opt-in.** It used to appear automatically in IE. If you
+**2. The iframe layer is opt-in.** It used to appear automatically in IE. If you
 block content that paints over the overlay — a plugin, an embed, a PDF viewer —
 set `forceIframe: true`.
+
+**3. `$.growlUI` escapes its title and message.** They are inserted as text now,
+so markup passed to them is shown literally instead of being parsed. 2.70 built
+them by string concatenation, which made a growl raised from a server message an
+injection vector.
+
+**4. `title` is inserted as text, not HTML.** With `theme: true`, `title` was
+concatenated straight into the layer markup, so a title built from server data
+executed. It is escaped now, matching `$.growlUI`. Markup belongs in `message`.
+
+**5. `iframeSrc` defaults to `about:blank` everywhere.** It was `javascript:false`
+over HTTPS, to dodge a mixed-content warning in IE 6/7 — long gone, and a
+`javascript:` URL trips a strict `script-src` policy for no benefit.
+
+**6. `onBlock`'s `this` is consistent.** It used to be a DOM element when
+`fadeIn > 0` and a jQuery object when `fadeIn: 0`, so the same callback got a
+different type depending on an unrelated option. It is now always the message
+layer's DOM element, with the jQuery wrapper passed as the first argument:
+
+```js
+// before 2.80 — only correct when fadeIn was 0
+onBlock: function() { this.find('.spinner').hide(); }
+
+// 2.80
+onBlock: function($layer) { $layer.find('.spinner').hide(); }
+```
 
 ### What was changed for jQuery 4
 
@@ -65,7 +93,7 @@ set `forceIframe: true`.
 | `e.keyCode == 9` | `e.key === 'Tab'`, with `keyCode` fallback | `keyCode` is deprecated in browsers |
 | Safari 6 reflow hack on every unblock | removed | forced a layout flush on a browser from 2012 |
 
-Two bugs were fixed along the way:
+Six bugs were fixed along the way:
 
 - **Clicks on the message panel's own padding were swallowed.** The handler
   tested `.parents()`, which doesn't match the element itself, so a click landing
@@ -76,6 +104,21 @@ Two bugs were fixed along the way:
   shrink-to-fit: setting `left` changes the space available to it, which changes
   its width, which invalidates the measurement. Now positioned with percentages
   and a translate, so it needs no measurement and survives reflow.
+- **`onBlock` received a different `this` depending on `fadeIn`** — see change 6
+  above.
+- **A message selector that matched nothing threw a `TypeError`.** An empty
+  jQuery set is truthy and still carries `.jquery`, so `$.blockUI({ message:
+  $('#typo') })` reached into `msg[0].parentNode`. Now it shows an empty panel.
+- **A borrowed message node could be destroyed.** `remove()` clears its
+  `pageBlock` reference when unblocking *starts*, not when it finishes, so
+  blocking again during the fade-out stranded the outgoing block's cleanup and
+  its borrowed node was swept away with the stale layers — permanently. A
+  double-clicked button or two overlapping requests was enough to delete the
+  element you passed as `message`.
+- **`title` executed HTML and `blockMsgClass` could break out of its class
+  attribute.** The layer elements are built with DOM calls now, so no option
+  other than `message` is concatenated into markup. See the security notes in
+  [DOCS.md](DOCS.md#security-notes).
 
 ## Styling
 
@@ -154,16 +197,21 @@ that, link `jquery.blockUI.css`, set `injectCSS: false`, and don't pass `css` or
 
 ## Tests
 
-`test/index.html` runs 28 assertions in the browser. Serve the repo over HTTP and
-open it with each combination:
+`test/index.html` runs 37 assertions against the plugin. `test/samples.html` runs
+38 more, each one a worked sample from [DOCS.md](DOCS.md). Serve the repo over
+HTTP and open both with each combination:
 
 ```
-test/index.html?jq=4          test/index.html?jq=4&css=1
-test/index.html?jq=3          test/index.html?jq=3&css=1
+test/index.html?jq=4            test/index.html?jq=4&css=1
+test/index.html?jq=3            test/index.html?jq=3&css=1
+
+test/samples.html?jq=4          test/samples.html?jq=4&css=1
+test/samples.html?jq=3          test/samples.html?jq=3&css=1
 ```
 
-It shims `requestAnimationFrame` onto timers so the fade paths are exercised even
-in a background tab, where jQuery's animations would otherwise never complete.
+Both shim `requestAnimationFrame` onto timers so the fade paths are exercised
+even in a background tab, where jQuery's animations would otherwise never
+complete.
 
 ## Browser support
 
